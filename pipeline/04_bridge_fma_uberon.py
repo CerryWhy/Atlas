@@ -14,6 +14,13 @@ la fonte dichiara la sottoclasse e i nomi coincidono a meno del lato:
 Questi legami vanno in `structure_uberon` con la loro provenienza; `structure.uberon_id`
 resta solo l'xref esatto.
 
+Ereditarietà dalla classe più generale (pipeline/lib/taxonomy.py): una struttura che,
+dopo i due passi sopra, non ha ancora contenuto clinico riceve il legame dell'antenato
+FMA più vicino (catena di rdfs:subClassOf dichiarati) che le fonti cliniche descrivono:
+- FMA:   Right fourth rib ⊑ Fourth rib ⊑ Rib,  Rib ↔ UBERON:0002228 (xref esatto)
+Limiti in config.ISA_MAX_HOPS e config.ISA_MAX_DESCENDANTS; elenco completo dei legami
+in data/reports/is_a_links.md, da leggere per tarare i limiti.
+
 Scrive un report per regione, data/reports/unmapped_<regione>.md, e un riepilogo
 data/reports/coverage.md. Vanno letti a ogni esecuzione.
 Idempotente: ricalcola e riscrive tutto.
@@ -24,7 +31,7 @@ Uso:  python -m pipeline.04_bridge_fma_uberon
 import sys
 from collections import defaultdict
 
-from pipeline.lib import config, db, laterality, obo, owl
+from pipeline.lib import config, db, laterality, obo, owl, taxonomy
 
 
 def uberon_by_fma() -> tuple[dict[str, list[str]], dict[str, str], dict[str, list[str]]]:
@@ -48,6 +55,8 @@ def laterality_links(
     by_fma: dict[str, list[str]],
     uberon_names: dict[str, str],
     uberon_is_a: dict[str, list[str]],
+    fma_names: dict[str, str],
+    fma_supers: dict[str, set[str]],
 ) -> list[tuple[str, str, str, str, str, str]]:
     """(fma_id, uberon_id, basis, via_id, via_label, unsided_label) ereditati dalla
     versione senza lato.
@@ -63,7 +72,6 @@ def laterality_links(
        superclasse FMA senza lato.
     Le due strade si sommano (possono arrivare a termini UBERON diversi, entrambi
     legittimi: "adult mammalian kidney" e "kidney"); se coincidono vale la prima."""
-    fma_names, fma_supers = owl.read_fma_taxonomy(config.FMA_OWL)
     fma_by_uberon: dict[str, set[str]] = defaultdict(set)
     for fma, ubs in by_fma.items():
         for u in ubs:
@@ -104,6 +112,84 @@ def laterality_links(
     return out
 
 
+def is_a_links(
+    structures: list[tuple[str, str, str | None]],
+    exact: dict[str, str],
+    lateral: list[tuple[str, str, str, str, str, str]],
+    by_fma: dict[str, list[str]],
+    clinical: set[str],
+    fma_names: dict[str, str],
+    fma_supers: dict[str, set[str]],
+) -> list[taxonomy.IsALink]:
+    """Legami dall'antenato FMA più vicino, solo per le strutture che con il legame
+    esatto e quelli con lato non raggiungono alcun contenuto clinico."""
+    reached: dict[str, set[str]] = defaultdict(set)
+    for fma_id, u in exact.items():
+        reached[fma_id].add(u)
+    for fma_id, u, *_ in lateral:
+        reached[fma_id].add(u)
+    count = taxonomy.subclass_counter(fma_supers, cap=config.ISA_MAX_DESCENDANTS)
+    out: list[taxonomy.IsALink] = []
+    for fma_id, _label, _region in structures:
+        if reached[fma_id] & clinical:
+            continue
+        for link in taxonomy.nearest_described_ancestors(
+            fma_id,
+            fma_supers,
+            fma_names,
+            by_fma,
+            clinical,
+            count,
+            config.ISA_MAX_HOPS,
+            config.ISA_MAX_DESCENDANTS,
+        ):
+            if link.uberon_id not in reached[fma_id]:
+                out.append(link)
+    return out
+
+
+def is_a_report(
+    links: list[taxonomy.IsALink],
+    labels: dict[str, str],
+    regions: dict[str, str | None],
+    uberon_names: dict[str, str],
+) -> str:
+    lines = [
+        "# Legami ereditati dalla classe più generale (`fma_is_a`)",
+        "",
+        f"Limiti: al più {config.ISA_MAX_HOPS} passi `rdfs:subClassOf`; antenato con al più"
+        f" {config.ISA_MAX_DESCENDANTS} sottoclassi FMA. Da leggere: un antenato troppo"
+        " generico porta contenuti che non dicono nulla della struttura; se succede,"
+        " abbassare i limiti in `pipeline/lib/config.py`.",
+        "",
+        f"Legami: **{len(links)}**.",
+        "",
+        "## Antenati usati, per numero di strutture",
+        "",
+        "| antenato FMA | nome | UBERON | strutture |",
+        "|---|---|---|---|",
+    ]
+    by_anc: dict[tuple[str, str, str], int] = defaultdict(int)
+    for x in links:
+        by_anc[(x.ancestor_id, x.ancestor_label, x.uberon_id)] += 1
+    for (anc, name, u), n in sorted(by_anc.items(), key=lambda kv: (-kv[1], kv[0])):
+        lines.append(f"| {anc} | {name} | {u} ({uberon_names.get(u, '?')}) | {n} |")
+    lines += [
+        "",
+        "## Tutti i legami",
+        "",
+        "| regione | fma_id | struttura | passi | antenato | UBERON |",
+        "|---|---|---|---|---|---|",
+        *[
+            f"| {regions.get(x.fma_id) or '—'} | {x.fma_id} | {labels.get(x.fma_id, '')} |"
+            f" {x.hops} | {x.ancestor_label} ({x.ancestor_id}) | {x.uberon_id} |"
+            for x in sorted(links, key=lambda x: (regions.get(x.fma_id) or "", x.fma_id))
+        ],
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> int:
     by_fma, uberon_names, uberon_is_a = uberon_by_fma()
 
@@ -129,10 +215,29 @@ def main() -> int:
         db.set_uberon_ids(conn, pairs)
         db.replace_unmapped(conn, ["fma_no_uberon", "fma_multi_uberon"], unmapped)
         exact = {fma_id: u for u, fma_id in pairs if u}
-        inherited = laterality_links(structures, exact, by_fma, uberon_names, uberon_is_a)
+        fma_names, fma_supers = owl.read_fma_taxonomy(config.FMA_OWL)
+        inherited = laterality_links(
+            structures, exact, by_fma, uberon_names, uberon_is_a, fma_names, fma_supers
+        )
+        clinical = db.clinical_uberon_ids(conn)
+        is_a = is_a_links(structures, exact, inherited, by_fma, clinical, fma_names, fma_supers)
         db.replace_structure_uberon(
             conn,
-            [*((f, u, "xref", None, None, None) for f, u in sorted(exact.items())), *inherited],
+            [
+                *((f, u, "xref", None, None, None) for f, u in sorted(exact.items())),
+                *inherited,
+                *(
+                    (
+                        x.fma_id,
+                        x.uberon_id,
+                        "fma_is_a",
+                        x.ancestor_id,
+                        x.ancestor_label,
+                        x.ancestor_label,
+                    )
+                    for x in is_a
+                ),
+            ],
         )
 
     all_total = len(structures)
@@ -146,23 +251,24 @@ def main() -> int:
         "Una struttura senza `uberon_id` è *muta*: nessun fenotipo HPO e nessuna malattia",
         "la raggiungono direttamente.",
         "",
-        "La colonna *con contenuto clinico* conta le strutture che hanno almeno una malattia",
-        "o un segno: prima per il solo legame esatto, poi includendo i legami ereditati dalla",
-        "versione senza lato (es. *Right humerus* → *Humerus*).",
+        "Le colonne *con contenuto clinico* contano le strutture che hanno almeno una malattia",
+        "o un segno: per il solo legame esatto; aggiungendo i legami ereditati dalla versione",
+        "senza lato (es. *Right humerus* → *Humerus*); aggiungendo infine quelli ereditati",
+        "dalla classe più generale (es. *Right fourth rib* → *Rib*, vedi `is_a_links.md`).",
         "",
         "| regione | strutture | con `uberon_id` | % | con nodo mesh |"
-        " con contenuto clinico: esatto → con lato ereditato |",
-        "|---|---|---|---|---|---|",
+        " clinico: esatto | + lato | + classe generale | % finale |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for region in config.REGION_KEYS:
         total, mapped, with_mesh = db.region_coverage(conn, region)
         if total == 0:
             continue
         pct = 100 * mapped / total
-        clin_exact, clin_all = db.region_clinical_coverage(conn, region)
+        clin_exact, clin_side, clin_all = db.region_clinical_coverage(conn, region)
         summary.append(
             f"| {region} | {total} | {mapped} | {pct:.1f}% | {with_mesh} |"
-            f" {clin_exact} → {clin_all} |"
+            f" {clin_exact} | {clin_side} | {clin_all} | {100 * clin_all / total:.1f}% |"
         )
         missing = db.region_unmapped(conn, region)
         lines = [
@@ -182,7 +288,7 @@ def main() -> int:
         (config.REPORTS / f"unmapped_{region}.md").write_text("\n".join(lines), encoding="utf-8")
         print(
             f"  {region:<11} {mapped:4}/{total:<4} con uberon_id ({pct:.1f}%);"
-            f" con contenuto clinico {clin_exact:4} → {clin_all:4}"
+            f" con contenuto clinico {clin_exact:4} → {clin_side:4} → {clin_all:4}"
         )
 
     summary += [
@@ -197,10 +303,16 @@ def main() -> int:
         "",
     ]
     (config.REPORTS / "coverage.md").write_text("\n".join(summary), encoding="utf-8")
+    labels = {f: lbl for f, lbl, _ in structures}
+    regions = {f: r for f, _, r in structures}
+    (config.REPORTS / "is_a_links.md").write_text(
+        is_a_report(is_a, labels, regions, uberon_names), encoding="utf-8"
+    )
     conn.close()
 
     print(f"  corpo intero: {all_mapped}/{all_total}")
     print(f"  legami ereditati destra/sinistra: {len(inherited)}")
+    print(f"  legami ereditati dalla classe più generale: {len(is_a)}")
     print(f"OK: report in {config.REPORTS.relative_to(config.ROOT)}")
     return 0
 

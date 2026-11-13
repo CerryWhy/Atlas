@@ -123,7 +123,8 @@ export interface components {
         };
         /**
          * InheritedLink
-         * @description Legame clinico preso dalla versione senza lato della struttura.
+         * @description Legame clinico preso da un concetto più generale della struttura: la sua versione
+         *     senza lato, oppure (se non basta) l'antenato FMA più vicino descritto dalle fonti.
          */
         InheritedLink: {
             /** Uberon Id */

@@ -34,10 +34,11 @@ class Phenotype(BaseModel):
 
 
 class InheritedLink(BaseModel):
-    """Legame clinico preso dalla versione senza lato della struttura."""
+    """Legame clinico preso da un concetto più generale della struttura: la sua versione
+    senza lato, oppure (se non basta) l'antenato FMA più vicino descritto dalle fonti."""
 
     uberon_id: str
-    basis: str  # 'fma_laterality' | 'uberon_laterality'
+    basis: str  # 'fma_laterality' | 'uberon_laterality' | 'fma_is_a'
     unsided_label: str
     # False se il termine senza lato non porta né malattie né segni
     carries_content: bool

@@ -42,9 +42,17 @@ def _inherited_link(
     conn: sqlite3.Connection, label: str, fma_id: str, link: sqlite3.Row
 ) -> InheritedLink:
     """Un legame ereditato porta due fonti: chi dichiara la sottoclasse (con lato ⊑ senza
-    lato) e il termine UBERON senza lato a cui le fonti cliniche si agganciano."""
+    lato, oppure struttura ⊑ … ⊑ antenato) e il termine UBERON più generale a cui le
+    fonti cliniche si agganciano."""
     unsided = str(link["unsided_label"] or link["uberon_id"])
-    if link["basis"] == "fma_laterality":
+    if link["basis"] == "fma_is_a":
+        relation = _release_citation(
+            conn,
+            "fma",
+            _fma_url(fma_id),
+            f"FMA: {label} discende per sottoclasse da {unsided} ({link['via_id']})",
+        )
+    elif link["basis"] == "fma_laterality":
         relation = _release_citation(
             conn, "fma", _fma_url(fma_id), f"FMA: {label} è sottoclasse di {unsided}"
         )
@@ -96,7 +104,7 @@ def get_structure(conn: Conn, fma_id: Annotated[str, Path(pattern=FMA_PATTERN)])
     }
 
     def via(uberon_id: str, basis: str) -> list[Citation]:
-        """Per una voce ereditata: la relazione con lato ⊑ senza lato che la porta qui."""
+        """Per una voce ereditata: la relazione di sottoclasse che la porta qui."""
         return [] if basis == "xref" else links[uberon_id].citations[:1]
 
     icd = queries.source_release(conn, "icd11")

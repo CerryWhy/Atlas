@@ -98,3 +98,11 @@ SOURCES: list[Source] = [
         "SimpleTabulation-ICD-11-MMS-en.zip",
     ),
 ]
+
+
+# ─── Ereditarietà dalla classe più generale (pipeline/lib/taxonomy.py) ─────────
+# Quanti passi rdfs:subClassOf si risalgono al massimo, e quante sottoclassi FMA può
+# avere l'antenato prima di essere considerato troppo generico per dire qualcosa della
+# struttura. Valori iniziali da tarare leggendo data/reports/is_a_links.md.
+ISA_MAX_HOPS = 3
+ISA_MAX_DESCENDANTS = 300

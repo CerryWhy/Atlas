@@ -34,13 +34,17 @@ CREATE INDEX IF NOT EXISTS idx_structure_region ON structure(region);
 --   basis = 'xref'              xref FMA esatto sul termine UBERON (= structure.uberon_id)
 --   basis = 'fma_laterality'    via = classe FMA senza lato di cui la struttura è sottoclasse
 --   basis = 'uberon_laterality' via = termine UBERON con lato (structure.uberon_id)
+--   basis = 'fma_is_a'          via = antenato FMA (rdfs:subClassOf) descritto dalle fonti
+--                               cliniche, quando la struttura non ha contenuto proprio
+--                               (vedi pipeline/lib/taxonomy.py)
 CREATE TABLE IF NOT EXISTS structure_uberon (
   fma_id    TEXT NOT NULL REFERENCES structure(fma_id),
   uberon_id TEXT NOT NULL,
-  basis     TEXT NOT NULL CHECK (basis IN ('xref', 'fma_laterality', 'uberon_laterality')),
+  basis     TEXT NOT NULL
+            CHECK (basis IN ('xref', 'fma_laterality', 'uberon_laterality', 'fma_is_a')),
   via_id    TEXT,
   via_label TEXT,
-  unsided_label TEXT,           -- nome della struttura senza lato (FMA o UBERON)
+  unsided_label TEXT,           -- nome del concetto più generico (senza lato o antenato)
   PRIMARY KEY (fma_id, uberon_id),
   CHECK ((basis = 'xref') = (via_id IS NULL))
 );
@@ -152,7 +156,18 @@ _ADDED_COLUMNS = {
 }
 
 
+# Tabelle il cui vincolo CHECK è cambiato: SQLite non sa modificarlo, quindi su un
+# database vecchio si ricreano. Sono tabelle che lo script proprietario riscrive per intero.
+_RECREATE_IF_MISSING = {"structure_uberon": "'fma_is_a'"}
+
+
 def migrate(conn: sqlite3.Connection) -> None:
+    for table, marker in _RECREATE_IF_MISSING.items():
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+        ).fetchone()
+        if row is not None and marker not in row[0]:
+            conn.execute(f"DROP TABLE {table}")
     conn.executescript(SCHEMA)
     for table, columns in _ADDED_COLUMNS.items():
         present = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
@@ -208,8 +223,9 @@ def clinical_uberon_ids(conn: sqlite3.Connection) -> set[str]:
     return {r[0] for r in rows}
 
 
-def region_clinical_coverage(conn: sqlite3.Connection, region: str) -> tuple[int, int]:
-    """(strutture con contenuto clinico per legame esatto, per legame esatto o ereditato)."""
+def region_clinical_coverage(conn: sqlite3.Connection, region: str) -> tuple[int, int, int]:
+    """Strutture con contenuto clinico: (per legame esatto, + ereditato dal lato,
+    + ereditato dalla classe più generale)."""
     row = conn.execute(
         """
         WITH clin AS (
@@ -217,6 +233,7 @@ def region_clinical_coverage(conn: sqlite3.Connection, region: str) -> tuple[int
         )
         SELECT
           COUNT(DISTINCT CASE WHEN su.basis = 'xref' THEN s.fma_id END),
+          COUNT(DISTINCT CASE WHEN su.basis <> 'fma_is_a' THEN s.fma_id END),
           COUNT(DISTINCT su.fma_id)
         FROM structure s
         JOIN structure_uberon su ON su.fma_id = s.fma_id
@@ -225,7 +242,7 @@ def region_clinical_coverage(conn: sqlite3.Connection, region: str) -> tuple[int
         """,
         (region,),
     ).fetchone()
-    return int(row[0]), int(row[1])
+    return int(row[0]), int(row[1]), int(row[2])
 
 
 def structure_ids(conn: sqlite3.Connection) -> list[tuple[str, str, str | None]]:

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Citation, Structure } from "../api/client";
+import { contentLinks, inheritanceKind, inheritanceSentence } from "../lib/inheritance";
 import { displayName, sceneName, spellId } from "../lib/labels";
 import { useAtlasStore } from "../store/atlas";
 import type { FmaId } from "../types/ids";
@@ -149,15 +150,17 @@ function UnsidedTag() {
 }
 
 /**
- * Patologie e segni presi dalla versione senza lato (es. "Right humerus" → "Humerus").
- * Le fonti cliniche raramente distinguono destra e sinistra: lo diciamo, con la fonte
- * che dichiara la relazione, invece di presentarli come specifici di questo lato.
+ * Patologie e segni presi da un concetto più generale: la versione senza lato
+ * ("Right humerus" → "Humerus") o, se non basta, la classe FMA più vicina descritta
+ * dalle fonti ("Right fourth rib" → "Rib"). Lo diciamo, con la fonte che dichiara la
+ * relazione, invece di presentarli come specifici di questa struttura.
  */
 function InheritanceNote({ data }: { data: Structure }) {
   const inheritedItems = [...data.diseases, ...data.phenotypes].filter((i) => i.inherited);
   // solo i legami che portano davvero voci: gli altri non spiegano nulla di ciò che si vede
-  const links = data.inherited_from.filter((l) => l.carries_content);
-  if (inheritedItems.length === 0 || links.length === 0) return null;
+  const links = contentLinks(data.inherited_from);
+  const kind = inheritanceKind(data.inherited_from);
+  if (inheritedItems.length === 0 || kind === null) return null;
   const all = inheritedItems.length === data.diseases.length + data.phenotypes.length;
   return (
     <p className="mt-4 border-l-2 border-iodine-600 pl-3 text-[0.88rem] text-ink-soft">
@@ -169,11 +172,8 @@ function InheritanceNote({ data }: { data: Structure }) {
             <span className="font-serif italic">{l.unsided_label}</span>
           </SourceLink>
         </span>
-      ))}{" "}
-      senza distinguere il lato.{" "}
-      {all
-        ? "Le voci qui sotto valgono per la struttura in generale, non specificamente per questo lato."
-        : "Le voci segnate «senza lato» valgono per la struttura in generale, non specificamente per questo lato."}
+      ))}
+      {inheritanceSentence(kind, all)}
     </p>
   );
 }
@@ -216,7 +216,7 @@ function Entry({ data }: { data: Structure }) {
       {data.diseases.length + data.phenotypes.length === 0 && (
         <p className="mt-4 border-l-2 border-gauze-300 pl-3 text-[0.88rem] text-ink-soft">
           {data.uberon_id || data.inherited_from.length > 0
-            ? "Le fonti caricate non collegano patologie o segni a questa struttura, né alla sua versione senza lato: di solito li registrano su una struttura più ampia."
+            ? "Le fonti caricate non collegano patologie o segni a questa struttura, né alla sua versione senza lato o a una classe vicina più generale: di solito li registrano su una struttura più ampia."
             : "Questa struttura non ha un collegamento alle ontologie cliniche."}{" "}
           {data.ancestors.length > 0 && "Risali la gerarchia qui sopra per trovarli."}
         </p>
