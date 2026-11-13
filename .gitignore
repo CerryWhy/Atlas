@@ -1,0 +1,18 @@
+# Artefatti della pipeline (I6) e materiale scaricato
+data/raw/
+data/atlas.db
+data/atlas.db-*
+data/meshes/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+web/dist/
+web/public/draco/
