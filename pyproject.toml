@@ -29,3 +29,6 @@ explicit_package_bases = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["api*", "pipeline*"]
