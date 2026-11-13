@@ -18,3 +18,4 @@ __pycache__/
 node_modules/
 web/dist/
 web/public/draco/
+*.egg-info/
