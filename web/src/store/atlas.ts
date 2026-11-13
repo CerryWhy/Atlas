@@ -1,6 +1,15 @@
 import { create } from "zustand";
 import { getStructure, type MeshFile, type MeshNode, type Structure } from "../api/client";
-import { defaultModes, groupOf, nextMode, type GroupKey, type Mode } from "../scene/tissues";
+import {
+  DEFAULT_LEVEL,
+  defaultModes,
+  groupOf,
+  nextMode,
+  peel,
+  type GroupKey,
+  type Level,
+  type Mode,
+} from "../scene/tissues";
 import type { FmaId } from "../types/ids";
 
 /** Un nodo del GLB arricchito con il suo gruppo di resa. */
@@ -24,6 +33,8 @@ type AtlasState = {
   hovered: FmaId | null;
   hoveredFocus: FmaId | null;
   modes: Record<GroupKey, Mode>;
+  /** Livello del comando a strati; null quando un gruppo è stato cambiato a mano. */
+  level: Level | null;
   /** "Mostra solo questo": tutto ciò che non è acceso dalla selezione sparisce. */
   isolated: boolean;
 
@@ -31,6 +42,7 @@ type AtlasState = {
   select: (id: FmaId | null) => void;
   hover: (node: FmaId | null) => void;
   cycleMode: (group: GroupKey) => void;
+  setLevel: (level: Level) => void;
   toggleIsolated: () => void;
 };
 
@@ -46,13 +58,16 @@ export const useAtlasStore = create<AtlasState>()((set, get) => ({
   hovered: null,
   hoveredFocus: null,
   modes: defaultModes(),
+  level: DEFAULT_LEVEL,
   isolated: false,
 
   setScene: (regions, nodes) =>
     set({
       regions,
       nodes: new Map(
-        nodes.map((n) => [n.fma_id, { ...n, group: groupOf(n.system, n.label_en) }] as const),
+        nodes.map(
+          (n) => [n.fma_id, { ...n, group: groupOf(n.system, n.label_en, n.tissue) }] as const,
+        ),
       ),
     }),
 
@@ -60,7 +75,12 @@ export const useAtlasStore = create<AtlasState>()((set, get) => ({
     inflight?.abort();
     inflight = null;
     if (id === null) {
-      set({ selected: null, detail: { state: "idle" }, lit: EMPTY, isolated: false });
+      set({
+        selected: null,
+        detail: { state: "idle" },
+        lit: EMPTY,
+        isolated: false,
+      });
       return;
     }
     if (id === get().selected && get().detail.state !== "error") return;
@@ -81,17 +101,30 @@ export const useAtlasStore = create<AtlasState>()((set, get) => ({
       })
       .catch((e: unknown) => {
         if (ctrl.signal.aborted || get().selected !== id) return;
-        set({ detail: { state: "error", message: e instanceof Error ? e.message : String(e) } });
+        set({
+          detail: {
+            state: "error",
+            message: e instanceof Error ? e.message : String(e),
+          },
+        });
       });
   },
 
   hover: (node) => {
     if (node === get().hovered) return;
-    set({ hovered: node, hoveredFocus: node ? (get().nodes.get(node)?.focus_fma_id ?? node) : null });
+    set({
+      hovered: node,
+      hoveredFocus: node ? (get().nodes.get(node)?.focus_fma_id ?? node) : null,
+    });
   },
 
   toggleIsolated: () => set((s) => ({ isolated: s.selected !== null && !s.isolated })),
 
   cycleMode: (group) =>
-    set((s) => ({ modes: { ...s.modes, [group]: nextMode(group, s.modes[group]) } })),
+    set((s) => ({
+      modes: { ...s.modes, [group]: nextMode(group, s.modes[group]) },
+      level: null,
+    })),
+
+  setLevel: (level) => set({ modes: peel(level), level }),
 }));

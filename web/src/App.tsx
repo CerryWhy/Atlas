@@ -4,6 +4,7 @@ import { getRegionNodes, getRegions } from "./api/client";
 import { sceneName } from "./lib/labels";
 import { Attribution } from "./pages/Attribution";
 import { LayerControls } from "./panels/LayerControls";
+import { PerfOverlay } from "./panels/PerfOverlay";
 import { StructurePanel } from "./panels/StructurePanel";
 import { Atlas } from "./scene/Atlas";
 import { HoverLabel } from "./scene/HoverLabel";
@@ -55,6 +56,7 @@ function Main() {
           <>
             <Atlas />
             <LoadingNote ready={regions.length > 0} />
+            <PerfOverlay />
           </>
         )}
       </div>

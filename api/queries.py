@@ -144,7 +144,7 @@ def mesh_nodes(conn: sqlite3.Connection, mesh_file: str) -> list[sqlite3.Row]:
             AND EXISTS (SELECT 1 FROM structure_uberon su WHERE su.fma_id = s.fma_id)
           GROUP BY u.node
         )
-        SELECT n.fma_id, n.label_en, n.label_la, n.label_it, n.system,
+        SELECT n.fma_id, n.label_en, n.label_la, n.label_it, n.system, n.tissue,
                f.fma_id AS focus_fma_id, f.label_en AS focus_label_en,
                f.label_it AS focus_label_it
         FROM structure n

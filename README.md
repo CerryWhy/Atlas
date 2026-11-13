@@ -118,6 +118,17 @@ di gruppo (pieno, velato, nascosto) in `web/src/scene/tissues.ts`. I caratteri
 (Brygada 1918, Hanken Grotesk, entrambi SIL OFL) sono serviti in locale: nessuna
 richiesta a terzi.
 
+- **Strati.** Il comando "Strato: Pelle → Muscoli → Ossa → Organi" toglie ciò che sta
+  sopra il livello scelto e vela ciò che sta sotto. Il tessuto di ogni struttura
+  (`structure.tissue`) lo scrive 04 risalendo la tassonomia FMA fino a classi cercate
+  per nome ("Muscle organ", "Bone organ", "Skin"…, `TISSUE_CLASSES` in
+  `pipeline/lib/config.py`); le voci della legenda restano regolabili una per una.
+- **Contorno.** La struttura selezionata ha un contorno color iodio (drei `Outlines`).
+- **Misure di Fase 2.** Con `?perf` nell'indirizzo (es. `http://localhost:5173/?perf`)
+  compare un riquadro con il tempo di caricamento, gli fps e il 95° percentile della
+  durata dei frame, confrontati con gli obiettivi della SPEC (< 3 s, 60 fps). Va letto
+  su uno schermo reale ruotando la scena: in un browser senza GPU gli fps non contano.
+
 ## Qualità
 
 ```bash

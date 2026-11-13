@@ -25,11 +25,14 @@ Scrive un report per regione, data/reports/unmapped_<regione>.md, e un riepilogo
 data/reports/coverage.md. Vanno letti a ogni esecuzione.
 Idempotente: ricalcola e riscrive tutto.
 
+Scrive anche `structure.tissue` (pelle, muscolo, osso) risalendo rdfs:subClassOf fino
+alle classi di config.TISSUE_CLASSES: serve ai livelli della scena, non alla clinica.
+
 Uso:  python -m pipeline.04_bridge_fma_uberon
 """
 
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from pipeline.lib import config, db, laterality, obo, owl, taxonomy
 
@@ -219,6 +222,12 @@ def main() -> int:
         inherited = laterality_links(
             structures, exact, by_fma, uberon_names, uberon_is_a, fma_names, fma_supers
         )
+        tissue_roots = taxonomy.classes_by_name(fma_names, config.TISSUE_CLASSES)
+        for name in sorted(set(config.TISSUE_CLASSES) - set(tissue_roots)):
+            print(f"  ! classe FMA per i tessuti non trovata (o ambigua): {name!r}")
+        tagged = {fma: config.TISSUE_CLASSES[name] for name, fma in tissue_roots.items()}
+        tissues = [(taxonomy.nearest_tag(f, fma_supers, tagged), f) for f, _, _ in structures]
+        db.set_tissues(conn, tissues)
         clinical = db.clinical_uberon_ids(conn)
         is_a = is_a_links(structures, exact, inherited, by_fma, clinical, fma_names, fma_supers)
         db.replace_structure_uberon(
@@ -313,6 +322,8 @@ def main() -> int:
     print(f"  corpo intero: {all_mapped}/{all_total}")
     print(f"  legami ereditati destra/sinistra: {len(inherited)}")
     print(f"  legami ereditati dalla classe più generale: {len(is_a)}")
+    by_tissue = Counter(t or "—" for t, _ in tissues)
+    print(f"  tessuti (livelli della scena): {dict(sorted(by_tissue.items()))}")
     print(f"OK: report in {config.REPORTS.relative_to(config.ROOT)}")
     return 0
 

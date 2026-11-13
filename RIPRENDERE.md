@@ -20,7 +20,7 @@ Fatto e sul branch `main`:
 
 Sul branch `claude/funny-franklin-2ikacr` (non ancora su `main`), scritto in una
 sessione cloud **senza accesso alle fonti** (rete bloccata): codice e test unitari
-passano (74 Python, di cui 45 saltati senza dati; 17 web), ma **nulla è stato
+passano (78 Python, di cui 46 saltati senza dati; 22 web), ma **nulla è stato
 verificato sui dati reali**.
 
 - **Ereditarietà dalla classe più generale** (`fma_is_a`, `pipeline/lib/taxonomy.py`):
@@ -29,11 +29,14 @@ verificato sui dati reali**.
   (`pipeline/lib/wikidata.py`); la scheda cita la voce Wikidata.
 - **Fenotipi bilaterali** esclusi dalle strutture con un lato (`phenotype.bilateral`,
   `structure.sided`).
+- **Fase 2, parte mancante**: strati pelle → muscoli → ossa → organi (tessuto da FMA,
+  `structure.tissue`), contorno sulla struttura selezionata, riquadro di misura con
+  `?perf`. Provati su una scena sintetica in un browser senza GPU: strati e contorno
+  funzionano; gli fps lì non contano.
 - `pip install -e` funziona su un clone pulito.
 
 Non fatto: Fasi 3–6 della SPEC (documenti, assistente con citazioni, sintomo → corpo,
-Europe PMC), pelle/muscoli come livelli, contorno sulla struttura attiva, misura degli
-fps (va fatta su uno schermo reale).
+Europe PMC).
 
 ## Da fare per primo: verificare sui dati reali
 
@@ -54,6 +57,12 @@ Poi leggere:
 - l'output di 03: quanti nomi italiani da Wikidata e quanti scartati per ambiguità.
 - alcune schede nel browser: un osso o un muscolo con lato, per controllare la nota
   "classe più generale" e il nome italiano.
+- l'output di 04: "tessuti (livelli della scena)" e gli eventuali avvisi "classe FMA per
+  i tessuti non trovata". Se un nome di `TISSUE_CLASSES` non esiste in FMA, correggerlo
+  con il nome preferito che FMA usa davvero.
+- **chiusura della Fase 2**: aprire `http://localhost:5173/?perf`, ruotare e
+  ingrandire per qualche secondo, leggere il riquadro (obiettivi: caricamento < 3 s,
+  ~60 fps). Provare gli strati e il `flyTo` su strutture piccole e grandi.
 
 Le soglie di `test_bilateral_phenotypes_and_sided_structures_are_marked` (>50, >100)
 sono stime: se il test fallisce, controllare prima i numeri reali.
@@ -110,7 +119,6 @@ Se cambi l'API, rigenera i tipi con l'API accesa: `npm run gen:types`.
 
 ## Prossimo passo suggerito
 
-Verificare sui dati quanto sopra. Poi chiudere la Fase 2 (contorno sulla struttura
-attiva, livelli pelle → muscoli → organi, misura degli fps), che la SPEC vuole chiusa
-prima della Fase 3. Poi Fase 3 (documenti con licenza, SPEC §10): chiedere conferma
+Verificare sui dati quanto sopra e leggere le misure di Fase 2: se i criteri passano,
+la Fase 2 è chiusa. Poi Fase 3 (documenti con licenza, SPEC §10): chiedere conferma
 sulle scelte di fonte e licenza prima di scrivere codice.

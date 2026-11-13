@@ -123,3 +123,17 @@ SOURCES: list[Source] = [
 # struttura. Valori iniziali da tarare leggendo data/reports/is_a_links.md.
 ISA_MAX_HOPS = 3
 ISA_MAX_DESCENDANTS = 300
+
+# ─── Tessuto di una struttura, per i livelli della scena (pelle → muscoli → ossa) ──
+# Classi FMA cercate per NOME esatto nel file (nessun ID scritto a mano: I5); una
+# struttura prende il tessuto della classe marcata più vicina risalendo rdfs:subClassOf.
+# Un nome che non si trova viene segnalato da 04 e semplicemente non marca nulla.
+TISSUE_CLASSES: dict[str, str] = {
+    "Skin": "skin",
+    "Muscle organ": "muscle",
+    "Tendon": "muscle",
+    "Fascia": "muscle",
+    "Bone organ": "bone",
+    "Cartilage organ": "bone",
+    "Ligament": "bone",
+}

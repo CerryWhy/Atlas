@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baseColor, defaultModes, groupOf, nextMode } from "./tissues";
+import { baseColor, defaultModes, groupOf, nextMode, peel } from "./tissues";
 
 describe("gruppi di resa", () => {
   it("riconosce vasi e vie biliari dal nome, qualunque sia il sistema", () => {
@@ -18,7 +18,31 @@ describe("gruppi di resa", () => {
     expect(groupOf("musculoskeletal", "Sacrum")).toBe("frame");
   });
 
+  it("il tessuto dichiarato dalla pipeline viene prima del nome e del sistema", () => {
+    expect(groupOf("musculoskeletal", "Right biceps brachii", "muscle")).toBe("muscles");
+    expect(groupOf("musculoskeletal", "Sacrum", "bone")).toBe("bones");
+    expect(groupOf(null, "Skin of abdomen", "skin")).toBe("skin");
+    expect(groupOf("musculoskeletal", "Sacrum", null)).toBe("frame");
+    expect(groupOf("musculoskeletal", "Sacrum", "unknown")).toBe("frame");
+  });
+
+  it("gli strati tolgono ciò che sta sopra e velano ciò che sta sotto", () => {
+    const skin = peel("skin");
+    expect([skin.skin, skin.muscles, skin.bones]).toEqual(["solid", "ghost", "ghost"]);
+    const muscles = peel("muscles");
+    expect([muscles.skin, muscles.muscles, muscles.bones]).toEqual(["hidden", "solid", "ghost"]);
+    const bones = peel("bones");
+    expect([bones.skin, bones.muscles, bones.bones]).toEqual(["hidden", "hidden", "solid"]);
+    const organs = peel("organs");
+    expect([organs.skin, organs.muscles, organs.bones]).toEqual(["hidden", "hidden", "ghost"]);
+    for (const level of ["skin", "muscles", "bones", "organs"] as const) {
+      expect(peel(level).digestive).toBe("solid"); // gli organi restano sempre pieni
+      expect(peel(level).frame).toBe("ghost");
+    }
+  });
+
   it("il contesto nasce velato e cicla velato → pieno → nascosto", () => {
+    expect(defaultModes()).toEqual(peel("organs"));
     expect(defaultModes().frame).toBe("ghost");
     expect(defaultModes().digestive).toBe("solid");
     expect(nextMode("frame", "ghost")).toBe("solid");

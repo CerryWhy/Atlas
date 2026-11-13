@@ -94,6 +94,7 @@ class MeshNode(BaseModel):
     label_la: str | None
     label_it: str | None
     system: str | None
+    tissue: str | None  # 'skin' | 'muscle' | 'bone': il livello della scena
     focus_fma_id: str = Field(pattern=FMA_PATTERN)
     focus_label_en: str
     focus_label_it: str | None

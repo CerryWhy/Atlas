@@ -162,6 +162,8 @@ export interface components {
             label_it: string | null;
             /** System */
             system: string | null;
+            /** Tissue */
+            tissue: string | null;
             /** Focus Fma Id */
             focus_fma_id: string;
             /** Focus Label En */

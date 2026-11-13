@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS structure (
   label_it_source TEXT,          -- 'fma' | 'wikidata': chi dà il nome italiano
   label_it_ref  TEXT,            -- per 'wikidata': la voce (es. 'Q9368')
   sided         INTEGER NOT NULL DEFAULT 0,  -- 1 se il nome è "Right …"/"Left …"
+  tissue        TEXT,           -- 'skin' | 'muscle' | 'bone' (scritto da 04, per la scena)
   uberon_id     TEXT,
   parent_fma_id TEXT REFERENCES structure(fma_id),
   system        TEXT,
@@ -159,6 +160,7 @@ _ADDED_COLUMNS = {
         ("label_it_source", "TEXT"),
         ("label_it_ref", "TEXT"),
         ("sided", "INTEGER NOT NULL DEFAULT 0"),
+        ("tissue", "TEXT"),
     ],
     "phenotype": [("bilateral", "INTEGER NOT NULL DEFAULT 0")],
     "structure_uberon": [("unsided_label", "TEXT")],
@@ -215,6 +217,11 @@ def upsert_structures(conn: sqlite3.Connection, rows: Iterable[dict[str, object]
 def set_uberon_ids(conn: sqlite3.Connection, pairs: Iterable[tuple[str | None, str]]) -> None:
     """pairs = (uberon_id | None, fma_id)."""
     conn.executemany("UPDATE structure SET uberon_id = ? WHERE fma_id = ?", pairs)
+
+
+def set_tissues(conn: sqlite3.Connection, pairs: Iterable[tuple[str | None, str]]) -> None:
+    """pairs = (tissue | None, fma_id)."""
+    conn.executemany("UPDATE structure SET tissue = ? WHERE fma_id = ?", pairs)
 
 
 def replace_structure_uberon(conn: sqlite3.Connection, rows: Rows) -> None:

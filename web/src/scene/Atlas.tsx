@@ -5,6 +5,7 @@ import { Vector3 } from "three";
 import { useAtlasStore } from "../store/atlas";
 import { CameraRig, cancelFlight } from "./CameraRig";
 import { leaderBus } from "./leader";
+import { perf, perfEnabled } from "./perf";
 import { Region } from "./Region";
 
 /** Proietta sullo schermo il centroide della struttura selezionata, a ogni frame. */
@@ -26,10 +27,23 @@ function LeaderProbe() {
   return null;
 }
 
+/** Registra la durata di ogni frame (solo con ?perf). */
+function PerfProbe() {
+  useFrame((_, dt) => perf.frame(dt));
+  return null;
+}
+
+/** Montato dentro Suspense dopo le regioni: il suo primo frame segna "tutto caricato". */
+function LoadMark() {
+  useFrame(() => perf.loaded(performance.now()));
+  return null;
+}
+
 /** <Canvas>, luci, controlli. Le regioni arrivano dall'API: nessun GLB cablato. */
 export function Atlas() {
   const regions = useAtlasStore((s) => s.regions);
   const select = useAtlasStore((s) => s.select);
+  const measuring = useMemo(() => perfEnabled(), []);
 
   return (
     <Canvas
@@ -58,9 +72,11 @@ export function Atlas() {
             <Region key={r.mesh_file} file={r.mesh_file} />
           ))}
         </Bounds>
+        {measuring && regions.length > 0 && <LoadMark />}
       </Suspense>
       <CameraRig />
       <LeaderProbe />
+      {measuring && <PerfProbe />}
     </Canvas>
   );
 }

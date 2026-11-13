@@ -98,3 +98,35 @@ def nearest_described_ancestors(
         # Oltre una classe troppo generica non si sale: sopra è ancora più generico.
         frontier = [n for n in nxt if descendants(n) <= max_descendants]
     return []
+
+
+def classes_by_name(names: Mapping[str, str], wanted: Iterable[str]) -> dict[str, str]:
+    """Nome FMA esatto → FMA ID, per i nomi richiesti che compaiono UNA sola volta.
+    Si cercano per nome per non scrivere ID a mano (I5); i mancanti si segnalano."""
+    want = {w.lower(): w for w in wanted}
+    hits: dict[str, set[str]] = defaultdict(set)
+    for fma_id, name in names.items():
+        key = name.strip().lower()
+        if key in want:
+            hits[want[key]].add(fma_id)
+    return {name: next(iter(ids)) for name, ids in hits.items() if len(ids) == 1}
+
+
+def nearest_tag(
+    fma_id: str, supers: Mapping[str, Iterable[str]], tagged: Mapping[str, str]
+) -> str | None:
+    """Il tag della classe marcata più vicina risalendo rdfs:subClassOf (la struttura
+    compresa). A pari distanza con tag diversi: nessun tag (non si sceglie)."""
+    frontier, seen = [fma_id], {fma_id}
+    while frontier:
+        tags = {tagged[n] for n in frontier if n in tagged}
+        if tags:
+            return tags.pop() if len(tags) == 1 else None
+        nxt: list[str] = []
+        for node in frontier:
+            for parent in supers.get(node, ()):
+                if parent not in seen:
+                    seen.add(parent)
+                    nxt.append(parent)
+        frontier = nxt
+    return None

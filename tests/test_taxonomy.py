@@ -76,3 +76,20 @@ def test_subclass_counter_stops_at_cap() -> None:
     assert count("FMA:2") == 2  # Right fourth rib, FMA:7
     assert count("FMA:5") > 2  # oltre il tetto il conteggio si ferma: basta sapere che è > 2
     assert count("FMA:1") == 0
+
+
+def test_classes_are_found_by_exact_unique_name() -> None:
+    names = {"FMA:1": "Bone organ", "FMA:2": "Muscle organ", "FMA:3": "Skin", "FMA:4": "skin"}
+    found = taxonomy.classes_by_name(names, ["Bone organ", "Muscle organ", "Skin", "Tendon"])
+    assert found == {"Bone organ": "FMA:1", "Muscle organ": "FMA:2"}  # "Skin" è ambiguo
+
+
+def test_nearest_tag_climbs_is_a() -> None:
+    tagged = {"FMA:4": "bone", "FMA:5": "organ"}
+    assert taxonomy.nearest_tag("FMA:1", SUPERS, tagged) == "bone"  # 3 passi fino a Bone organ
+    assert taxonomy.nearest_tag("FMA:4", SUPERS, tagged) == "bone"  # la classe stessa
+    assert taxonomy.nearest_tag("FMA:99", SUPERS, tagged) is None
+    # FMA:7 → (FMA:2 → FMA:3 → FMA:4 bone) e (FMA:8 → FMA:5 organ): vince il più vicino
+    assert taxonomy.nearest_tag("FMA:7", SUPERS, tagged) == "organ"
+    # a pari distanza con tag diversi non si sceglie
+    assert taxonomy.nearest_tag("FMA:7", SUPERS, {"FMA:2": "bone", "FMA:8": "muscle"}) is None

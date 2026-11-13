@@ -118,3 +118,17 @@ def test_bilateral_phenotypes_stay_off_sided_structures(client: TestClient) -> N
     assert "Bilateral rib anomaly" not in [p["label"] for p in sided["phenotypes"]]
     generic = client.get("/structure/FMA:9999992").json()
     assert "Bilateral rib anomaly" in [p["label"] for p in generic["phenotypes"]]
+
+
+def test_region_nodes_carry_the_tissue(client: TestClient, tmp_path: Path) -> None:
+    """La scena raggruppa per tessuto (pelle, muscolo, osso): lo dice la pipeline."""
+    path = tmp_path / "atlas.db"
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "UPDATE structure SET mesh_file = 'thorax.glb', mesh_node = fma_id, tissue = 'bone'"
+        )
+    nodes = client.get("/regions/thorax.glb/nodes").json()
+    assert {n["fma_id"]: n["tissue"] for n in nodes} == {
+        "FMA:9999991": "bone",
+        "FMA:9999992": "bone",
+    }

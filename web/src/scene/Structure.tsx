@@ -1,3 +1,4 @@
+import { Outlines } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { Color, type BufferGeometry, type MeshPhysicalMaterial } from "three";
@@ -12,6 +13,11 @@ const WHITE = new Color("#ffffff");
 const BLACK = new Color("#000000");
 const GHOST = new Color(GROUPS.frame.color);
 const NO_RAYCAST = () => null;
+/** Contorno della struttura attiva: tinta iodio dell'interfaccia, spessore in pixel. */
+const OUTLINE_COLOR = "#e3a63f";
+// In drei 9.122 il ramo `screenspace` del vertex shader è invertito: è con
+// screenspace={false} che `thickness` si misura in pixel. Spessore fisso a ogni zoom.
+const OUTLINE_PX = 2.5;
 
 function lookOf(base: Color, s: { ghost: boolean; lit: boolean; dim: boolean; hot: boolean }): Look {
   if (s.ghost) return { color: GHOST, emissive: BLACK, opacity: s.dim ? 0.04 : 0.1 };
@@ -126,6 +132,9 @@ export function Structure({ node, geometry }: Props) {
         clearcoat={sheer ? 0 : 0.35}
         clearcoatRoughness={0.5}
       />
+      {lit && !sheer && (
+        <Outlines color={OUTLINE_COLOR} thickness={OUTLINE_PX} screenspace={false} />
+      )}
     </mesh>
   );
 }

@@ -224,6 +224,18 @@ def test_bilateral_phenotypes_and_sided_structures_are_marked(conn: sqlite3.Conn
     assert unsided == 0
 
 
+def test_scene_layers_have_bones_and_muscles(conn: sqlite3.Connection) -> None:
+    """I livelli pelle → muscoli → ossa della scena dipendono da structure.tissue."""
+    tissues = dict(
+        conn.execute(
+            "SELECT tissue, COUNT(*) FROM structure WHERE mesh_node IS NOT NULL GROUP BY tissue"
+        ).fetchall()
+    )
+    assert tissues.get("bone", 0) > 50, tissues
+    assert tissues.get("muscle", 0) > 50, tissues
+    assert set(tissues) <= {None, "skin", "muscle", "bone"}
+
+
 def test_uberon_route_does_not_widen_the_structure(conn: sqlite3.Connection) -> None:
     """Regressione: UBERON usa "left eye" come xref di "Left eyeball"; risalendo is_a si
     arriverebbe a "eye" (occhio intero, annessi compresi), che non è il bulbo."""
