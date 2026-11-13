@@ -5,8 +5,11 @@ from fastapi.testclient import TestClient
 
 from api.db import DB_PATH
 from api.main import app
+from tests.pipeline_db import has_table_rows
 
-pytestmark = pytest.mark.skipif(not DB_PATH.exists(), reason="atlas.db non generato")
+pytestmark = pytest.mark.skipif(
+    not has_table_rows(DB_PATH, "structure"), reason="atlas.db non generato (o senza strutture)"
+)
 client = TestClient(app)
 
 

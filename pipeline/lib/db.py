@@ -103,21 +103,40 @@ CREATE TABLE IF NOT EXISTS document (
   url        TEXT NOT NULL,
   license    TEXT NOT NULL CHECK (trim(license) <> ''),
   retrieved  TEXT NOT NULL,
-  text       TEXT NOT NULL
+  text       TEXT NOT NULL,
+  text_sha256 TEXT               -- se cambia, 05 butta i chunk e 07 li rifà
+);
+CREATE INDEX IF NOT EXISTS idx_document_source ON document(source);
+
+-- Estensione: riferimenti che la FONTE dichiara per un documento (codici MeSH,
+-- ORPHAcode, MONDO; titolo dei capitoli di anatomia). 06 li risolve in legami.
+CREATE TABLE IF NOT EXISTS document_ref (
+  doc_id  TEXT NOT NULL REFERENCES document(doc_id),
+  scheme  TEXT NOT NULL,        -- 'MESH' | 'Orphanet' | 'MONDO' | 'anatomy'
+  code    TEXT NOT NULL,
+  PRIMARY KEY (doc_id, scheme, code)
 );
 
+-- basis: come 06 è arrivato al legame (vedi pipeline/06_link_documents.py);
+-- via: il riferimento o la malattia che lo porta. Servono a citare il legame (I2).
 CREATE TABLE IF NOT EXISTS document_structure (
   doc_id    TEXT NOT NULL REFERENCES document(doc_id),
   fma_id    TEXT NOT NULL REFERENCES structure(fma_id),
   relevance REAL NOT NULL DEFAULT 1.0,
+  basis     TEXT,
+  via       TEXT,
   PRIMARY KEY (doc_id, fma_id)
 );
+CREATE INDEX IF NOT EXISTS idx_document_structure_fma ON document_structure(fma_id);
 
 CREATE TABLE IF NOT EXISTS document_disease (
   doc_id   TEXT NOT NULL REFERENCES document(doc_id),
   mondo_id TEXT NOT NULL REFERENCES disease(mondo_id),
+  basis    TEXT,
+  via      TEXT,
   PRIMARY KEY (doc_id, mondo_id)
 );
+CREATE INDEX IF NOT EXISTS idx_document_disease_mondo ON document_disease(mondo_id);
 
 CREATE TABLE IF NOT EXISTS chunk (
   chunk_id  TEXT PRIMARY KEY,
@@ -163,6 +182,9 @@ _ADDED_COLUMNS = {
         ("tissue", "TEXT"),
     ],
     "phenotype": [("bilateral", "INTEGER NOT NULL DEFAULT 0")],
+    "document": [("text_sha256", "TEXT")],
+    "document_structure": [("basis", "TEXT"), ("via", "TEXT")],
+    "document_disease": [("basis", "TEXT"), ("via", "TEXT")],
     "structure_uberon": [("unsided_label", "TEXT")],
     "disease_structure": [("source", "TEXT"), ("source_id", "TEXT")],
 }
@@ -174,6 +196,7 @@ _RECREATE_IF_MISSING = {"structure_uberon": "'fma_is_a'"}
 
 
 def migrate(conn: sqlite3.Connection) -> None:
+    _add_columns(conn)  # prima dello schema: i suoi indici possono usare colonne nuove
     for table, marker in _RECREATE_IF_MISSING.items():
         row = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
@@ -181,8 +204,14 @@ def migrate(conn: sqlite3.Connection) -> None:
         if row is not None and marker not in row[0]:
             conn.execute(f"DROP TABLE {table}")
     conn.executescript(SCHEMA)
+    _add_columns(conn)
+
+
+def _add_columns(conn: sqlite3.Connection) -> None:
     for table, columns in _ADDED_COLUMNS.items():
         present = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if not present:  # la tabella non esiste ancora: la crea lo schema
+            continue
         for name, sqltype in columns:
             if name not in present:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {sqltype}")
@@ -378,3 +407,132 @@ def upsert_source_release(
         """,
         (source, title, version, url, license, attribution),
     )
+
+
+# ─── documenti (Fase 3) ─────────────────────────────────────────────────────
+def document_hashes(conn: sqlite3.Connection, source: str) -> dict[str, str | None]:
+    rows = conn.execute(
+        "SELECT doc_id, text_sha256 FROM document WHERE source = ?", (source,)
+    ).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+def delete_document_dependents(conn: sqlite3.Connection, doc_ids: Iterable[str]) -> None:
+    """Chunk, riferimenti e legami dei documenti indicati (non i documenti)."""
+    ids = [(d,) for d in doc_ids]
+    for table in ("chunk", "document_ref", "document_structure", "document_disease"):
+        conn.executemany(f"DELETE FROM {table} WHERE doc_id = ?", ids)
+
+
+def delete_documents(conn: sqlite3.Connection, doc_ids: Iterable[str]) -> None:
+    ids = list(doc_ids)
+    delete_document_dependents(conn, ids)
+    conn.executemany("DELETE FROM document WHERE doc_id = ?", [(d,) for d in ids])
+
+
+def upsert_document(
+    conn: sqlite3.Connection,
+    row: tuple[str, str, str, str, str, str, str, str],
+) -> None:
+    """row = (doc_id, source, title, url, license, retrieved, text, text_sha256)."""
+    conn.execute(
+        """
+        INSERT INTO document (doc_id, source, title, url, license, retrieved, text, text_sha256)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(doc_id) DO UPDATE SET
+          source=excluded.source, title=excluded.title, url=excluded.url,
+          license=excluded.license, retrieved=excluded.retrieved, text=excluded.text,
+          text_sha256=excluded.text_sha256
+        """,
+        row,
+    )
+
+
+def replace_document_refs(
+    conn: sqlite3.Connection, doc_id: str, refs: Iterable[tuple[str, str]]
+) -> None:
+    conn.execute("DELETE FROM document_ref WHERE doc_id = ?", (doc_id,))
+    conn.executemany(
+        "INSERT OR IGNORE INTO document_ref (doc_id, scheme, code) VALUES (?, ?, ?)",
+        [(doc_id, scheme, code) for scheme, code in refs],
+    )
+
+
+def document_refs(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
+    return conn.execute("SELECT doc_id, scheme, code FROM document_ref ORDER BY doc_id").fetchall()
+
+
+def replace_document_links(
+    conn: sqlite3.Connection,
+    diseases: Iterable[tuple[str, str, str, str]],
+    structures: Iterable[tuple[str, str, float, str, str]],
+) -> None:
+    """diseases = (doc_id, mondo_id, basis, via); structures = (doc_id, fma_id,
+    relevance, basis, via). Tutti i legami vengono ricalcolati da 06."""
+    conn.execute("DELETE FROM document_disease")
+    conn.execute("DELETE FROM document_structure")
+    conn.executemany(
+        "INSERT INTO document_disease (doc_id, mondo_id, basis, via) VALUES (?, ?, ?, ?)",
+        diseases,
+    )
+    conn.executemany(
+        "INSERT INTO document_structure (doc_id, fma_id, relevance, basis, via)"
+        " VALUES (?, ?, ?, ?, ?)",
+        structures,
+    )
+
+
+def documents_without_chunks(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    return conn.execute(
+        """
+        SELECT d.doc_id, d.text FROM document d
+        WHERE NOT EXISTS (SELECT 1 FROM chunk c WHERE c.doc_id = d.doc_id)
+        ORDER BY d.doc_id
+        """
+    ).fetchall()
+
+
+def insert_chunks(conn: sqlite3.Connection, rows: Rows) -> None:
+    """rows = (chunk_id, doc_id, ordinal, text)."""
+    conn.executemany(
+        "INSERT INTO chunk (chunk_id, doc_id, ordinal, text) VALUES (?, ?, ?, ?)", rows
+    )
+
+
+def broad_structures(conn: sqlite3.Connection, min_depth: int) -> frozenset[str]:
+    """Strutture dei primi livelli dell'albero (apparati, regioni)."""
+    rows = conn.execute("SELECT fma_id FROM structure WHERE depth < ?", (min_depth,))
+    return frozenset(r[0] for r in rows)
+
+
+def link_vocab_rows(
+    conn: sqlite3.Connection,
+) -> tuple[set[str], list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
+    """(malattie, (label_en, fma_id), (uberon_id, fma_id) senza 'fma_is_a',
+    (mondo_id, uberon_id) delle sedi)."""
+    diseases = {r[0] for r in conn.execute("SELECT mondo_id FROM disease")}
+    names = conn.execute("SELECT label_en, fma_id FROM structure").fetchall()
+    uberon = conn.execute(
+        "SELECT uberon_id, fma_id FROM structure_uberon WHERE basis <> 'fma_is_a'"
+    ).fetchall()
+    sites = conn.execute("SELECT mondo_id, uberon_id FROM disease_structure").fetchall()
+    return diseases, names, uberon, sites
+
+
+def document_titles(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
+    return {r[0]: (r[1], r[2]) for r in conn.execute("SELECT doc_id, source, title FROM document")}
+
+
+def abdominal_structures_without_documents(
+    conn: sqlite3.Connection, region: str
+) -> list[tuple[str, str]]:
+    """Criterio di Fase 3: strutture della regione con uberon_id e nessun documento."""
+    return conn.execute(
+        """
+        SELECT s.fma_id, s.label_en FROM structure s
+        WHERE s.region = ? AND s.uberon_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM document_structure ds WHERE ds.fma_id = s.fma_id)
+        ORDER BY s.label_en
+        """,
+        (region,),
+    ).fetchall()

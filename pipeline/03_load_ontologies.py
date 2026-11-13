@@ -27,9 +27,8 @@ import re
 import sqlite3
 import sys
 from collections import Counter, defaultdict
-from pathlib import Path
 
-from pipeline.lib import bp3d, config, db, laterality, obo, owl, wikidata
+from pipeline.lib import bp3d, config, db, fetch, laterality, obo, owl, wikidata
 
 # Figli diretti di "human body" nell'albero BodyParts3D che sono sistemi → chiave `system`.
 # Gli ID vengono dal file; la chiave è una nostra etichetta di classificazione.
@@ -323,12 +322,6 @@ def hpoa_version() -> str:
     raise LookupError("phenotype.hpoa senza #version")
 
 
-def retrieved(path: Path) -> str:
-    """Data di download dal MANIFEST di 01: per una query live è l'unica versione."""
-    manifest = json.loads(config.MANIFEST.read_text("utf-8"))
-    return str(manifest[path.relative_to(config.RAW).as_posix()]["retrieved"])
-
-
 def register_sources(conn: sqlite3.Connection, fma_version: str) -> None:
     def lic(path: object) -> str:
         return LICENSES[obo.license_url(path)]  # type: ignore[arg-type]
@@ -412,7 +405,7 @@ def register_sources(conn: sqlite3.Connection, fma_version: str) -> None:
         (
             "wikidata",
             "Wikidata (Italian labels of items with an FMA ID, P1402)",
-            retrieved(config.WIKIDATA_LABELS_IT),
+            fetch.retrieved(config.WIKIDATA_LABELS_IT),
             "https://www.wikidata.org/wiki/Property:P1402",
             "CC0 1.0",  # https://www.wikidata.org/wiki/Wikidata:Licensing (dati strutturati)
             "Italian anatomical names from Wikidata, available under CC0 1.0.",

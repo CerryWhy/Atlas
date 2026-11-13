@@ -85,6 +85,15 @@ REGION_MIN_FRACTION = 0.5
 class Source:
     dest: Path
     url: str
+    # Copie dello STESSO file da provare se `url` non risponde (es. una rete che non
+    # lascia passare HTTP in chiaro). 01 registra nel MANIFEST l'URL usato davvero.
+    mirrors: tuple[str, ...] = ()
+
+
+# Wayback Machine: copia d'archivio della release FMA ufficiale, servita in HTTPS.
+# `id_` chiede il file originale, senza la barra di navigazione dell'archivio.
+_FMA_RELEASE = "http://sig.biostr.washington.edu/share/downloads/fma/release/latest"
+_WAYBACK = "https://web.archive.org/web/2025id_/"
 
 
 _BP3D = "https://dbarchive.biosciencedbc.jp/data/bodyparts3d/LATEST"
@@ -94,16 +103,17 @@ SOURCES: list[Source] = [
     Source(BP3D_ELEMENTS, f"{_BP3D}/partof_element_parts.txt"),
     Source(BP3D_TREE, f"{_BP3D}/partof_inclusion_relation_list.txt"),
     Source(BP3D_ZIP, f"{_BP3D}/partof_BP3D_4.0_obj_99.zip"),
-    Source(FMA_OWL, "http://sig.biostr.washington.edu/share/downloads/fma/release/latest/fma.owl"),
+    Source(FMA_OWL, f"{_FMA_RELEASE}/fma.owl", (f"{_WAYBACK}{_FMA_RELEASE}/fma.owl",)),
     Source(
         ONTO / "fma.LICENSE",
-        "http://sig.biostr.washington.edu/share/downloads/fma/release/latest/LICENSE",
+        f"{_FMA_RELEASE}/LICENSE",
+        (f"{_WAYBACK}{_FMA_RELEASE}/LICENSE",),
     ),
-    Source(MONDO_OBO, "http://purl.obolibrary.org/obo/mondo.obo"),
-    Source(UBERON_OBO, "http://purl.obolibrary.org/obo/uberon/basic.obo"),
-    Source(HPO_OBO, "http://purl.obolibrary.org/obo/hp/hp-full.obo"),
-    Source(HPOA, "http://purl.obolibrary.org/obo/hp/hpoa/phenotype.hpoa"),
-    Source(DOID_OWL, "http://purl.obolibrary.org/obo/doid.owl"),
+    Source(MONDO_OBO, "https://purl.obolibrary.org/obo/mondo.obo"),
+    Source(UBERON_OBO, "https://purl.obolibrary.org/obo/uberon/basic.obo"),
+    Source(HPO_OBO, "https://purl.obolibrary.org/obo/hp/hp-full.obo"),
+    Source(HPOA, "https://purl.obolibrary.org/obo/hp/hpoa/phenotype.hpoa"),
+    Source(DOID_OWL, "https://purl.obolibrary.org/obo/doid.owl"),
     Source(
         ICD11_ZIP,
         f"https://icdcdn.who.int/static/releasefiles/{ICD11_RELEASE}/"
@@ -137,3 +147,16 @@ TISSUE_CLASSES: dict[str, str] = {
     "Cartilage organ": "bone",
     "Ligament": "bone",
 }
+
+# ─── Corpus testuale (Fase 3) ─────────────────────────────────────────────────
+# Gli URL di MedlinePlus e StatPearls cambiano a ogni rilascio: 05 li ricava dagli
+# indici ufficiali (pagina XML di MedlinePlus, file_list.csv dell'FTP NCBI).
+DOCS = RAW / "docs"
+MEDLINEPLUS_XML = DOCS / "mplus_topics.xml"
+MEDLINEPLUS_INDEX = "https://medlineplus.gov/xml.html"
+ORPHANET_XML = DOCS / "orphanet_en_product1.xml"
+ORPHANET_URL = "https://www.orphadata.com/data/xml/en_product1.xml"
+STATPEARLS_TGZ = DOCS / "statpearls_NBK430685.tar.gz"
+STATPEARLS_ACCESSION = "NBK430685"
+# Solo l'FTP ufficiale NCBI (SPEC §3): niente recupero sistematico da altre vie.
+NCBI_LITARCH = "https://ftp.ncbi.nlm.nih.gov/pub/litarch/"

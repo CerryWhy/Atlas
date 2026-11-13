@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 _DEF_RE = re.compile(r'^"((?:[^"\\]|\\.)*)"')
+_SYNONYM_RE = re.compile(r'^"((?:[^"\\]|\\.)*)"\s+EXACT\b')
 
 
 @dataclass
@@ -20,6 +21,8 @@ class Term:
     is_a: list[str] = field(default_factory=list)
     # (relazione, target) da righe `relationship:` e `intersection_of:` con relazione
     relations: list[tuple[str, str]] = field(default_factory=list)
+    # sinonimi marcati EXACT (gli altri — BROAD, NARROW, RELATED — non sono equivalenze)
+    exact_synonyms: list[str] = field(default_factory=list)
 
 
 def _strip_comment(value: str) -> str:
@@ -49,6 +52,10 @@ def iter_terms(path: Path) -> Iterator[Term]:
             elif tag == "def":
                 m = _DEF_RE.match(value)
                 term.definition = m.group(1).replace('\\"', '"') if m else None
+            elif tag == "synonym":
+                m = _SYNONYM_RE.match(value)
+                if m:
+                    term.exact_synonyms.append(m.group(1).replace('\\"', '"'))
             elif tag == "is_obsolete":
                 term.obsolete = value.strip() == "true"
             elif tag == "xref":

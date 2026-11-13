@@ -10,8 +10,12 @@ from collections.abc import Iterator
 import pytest
 
 from pipeline.lib import config
+from tests.pipeline_db import has_table_rows
 
-pytestmark = pytest.mark.skipif(not config.DB_PATH.exists(), reason="atlas.db non generato")
+pytestmark = pytest.mark.skipif(
+    not has_table_rows(config.DB_PATH, "structure"),
+    reason="atlas.db non generato (o senza strutture)",
+)
 
 REGION = "abdomen"  # regione di riferimento per i criteri di accettazione di Fase 1
 

@@ -36,3 +36,16 @@ def test_parse_terms(tmp_path: Path) -> None:
     assert "disease_has_location" not in terms
     assert obo.data_version(p) == "releases/2099-01-01"
     assert obo.license_url(p) == "http://creativecommons.org/licenses/by/4.0/"
+
+
+def test_only_exact_synonyms_are_kept(tmp_path: Path) -> None:
+    p = tmp_path / "m.obo"
+    p.write_text(
+        "format-version: 1.2\n\n[Term]\nid: MONDO:0000001\nname: disease\n"
+        'synonym: "condition" EXACT [NCIT:C2991]\n'
+        'synonym: "illness \\"x\\"" EXACT OMO:0003011 []\n'
+        'synonym: "disorder" RELATED []\n',
+        encoding="utf-8",
+    )
+    t = obo.load_terms(p)["MONDO:0000001"]
+    assert t.exact_synonyms == ["condition", 'illness "x"']
