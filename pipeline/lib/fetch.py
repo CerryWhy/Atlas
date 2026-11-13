@@ -7,7 +7,7 @@ la data, la dimensione e lo SHA-256: si sa sempre da quale versione nasce atlas.
 import datetime as dt
 import hashlib
 import json
-import shutil
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -24,12 +24,43 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+PROGRESS_STEP = 50 << 20  # una riga di avanzamento ogni 50 MB
+
+
 def download(url: str, dest: Path, timeout: int = 120) -> None:
+    """Scarica in `<dest>.part` e lo rinomina a fine corsa. Se il `.part` esiste (download
+    interrotto) riprende da lì con l'intestazione Range, quando il server la accetta;
+    altrimenti riparte da zero. Stampa l'avanzamento sui file grandi."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as resp, tmp.open("wb") as out:
-        shutil.copyfileobj(resp, out, length=1 << 20)
+    have = tmp.stat().st_size if tmp.exists() else 0
+    headers = {"User-Agent": USER_AGENT}
+    if have:
+        headers["Range"] = f"bytes={have}-"
+    try:
+        resp = urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout)
+    except urllib.error.HTTPError as e:
+        if e.code == 416 and have:  # il .part non corrisponde al file: da capo
+            tmp.unlink()
+            return download(url, dest, timeout)
+        raise
+    with resp:
+        resuming = have > 0 and resp.status == 206
+        done = have if resuming else 0
+        length = int(resp.headers.get("Content-Length") or 0)
+        total = done + length if length else 0
+        if resuming:
+            print(f"    ripreso da {done >> 20} MB")
+        shown = done
+        with tmp.open("ab" if resuming else "wb") as out:
+            while block := resp.read(1 << 20):
+                out.write(block)
+                done += len(block)
+                if total > PROGRESS_STEP and done - shown >= PROGRESS_STEP:
+                    shown = done
+                    print(
+                        f"    {done >> 20} / {total >> 20} MB ({100 * done // total}%)", flush=True
+                    )
     tmp.replace(dest)
 
 
