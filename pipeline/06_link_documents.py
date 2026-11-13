@@ -16,7 +16,7 @@ Uso:  python -m pipeline.06_link_documents
 import sys
 from collections import Counter
 
-from pipeline.lib import config, db, doclinks, obo
+from pipeline.lib import config, db, doclinks, obo, taxonomy
 
 ACCEPTANCE_REGION = "abdomen"
 # Come per il fuoco di un clic (api/queries.py): sotto questa profondità c'è un apparato
@@ -35,19 +35,36 @@ def mondo_vocab() -> tuple[dict[str, str], dict[str, str]]:
     return doclinks.unique_index(by_xref), doclinks.unique_index(by_name)
 
 
-def uberon_vocab() -> tuple[dict[str, str], dict[str, str], dict[str, set[str]]]:
+def uberon_vocab() -> tuple[
+    dict[str, str], dict[str, str], dict[str, set[str]], dict[str, str], dict[str, set[str]]
+]:
     by_mesh: list[tuple[str, str]] = []
     by_name: list[tuple[str, str]] = []
     part_of: dict[str, set[str]] = {}
+    names: dict[str, str] = {}
+    is_a: dict[str, set[str]] = {}
     for t in obo.iter_terms(config.UBERON_OBO):
         if t.obsolete or not t.id.startswith("UBERON:"):
             continue
+        names[t.id] = t.name
         by_mesh += [(x, t.id) for x in t.xrefs if x.startswith("MESH:")]
         by_name += [(doclinks.norm(n), t.id) for n in (t.name, *t.exact_synonyms) if n]
         wholes = {w for rel, w in t.relations if rel == "part_of" and w.startswith("UBERON:")}
         if wholes:
             part_of[t.id] = wholes
-    return doclinks.unique_index(by_mesh), doclinks.unique_index(by_name), part_of
+        supers = {p for p in t.is_a if p.startswith("UBERON:")}
+        if supers:
+            is_a[t.id] = supers
+    return doclinks.unique_index(by_mesh), doclinks.unique_index(by_name), part_of, names, is_a
+
+
+def generic_terms(is_a: dict[str, set[str]]) -> frozenset[str]:
+    """Termini UBERON con troppe sottoclassi per fare da contenitore (doclinks)."""
+    cap = doclinks.MAX_CONTAINER_SUBCLASSES
+    count = taxonomy.subclass_counter(is_a, cap=cap)
+    return frozenset(
+        u for u in is_a.keys() | {p for ps in is_a.values() for p in ps} if count(u) > cap
+    )
 
 
 def main() -> int:
@@ -59,7 +76,7 @@ def main() -> int:
             sys.exit("document_ref è vuota: eseguire prima 05_ingest_documents")
         diseases, names, uberon_links, sites = db.link_vocab_rows(conn)
         mondo_xref, mondo_name = mondo_vocab()
-        uberon_mesh, uberon_name, uberon_part_of = uberon_vocab()
+        uberon_mesh, uberon_name, uberon_part_of, uberon_labels, uberon_is_a = uberon_vocab()
         structures_by_uberon: dict[str, set[str]] = {}
         for u, f in uberon_links:
             structures_by_uberon.setdefault(u, set()).add(f)
@@ -77,6 +94,10 @@ def main() -> int:
             disease_sites=disease_sites,
             uberon_part_of=uberon_part_of,
             broad=db.broad_structures(conn, MIN_TARGET_DEPTH),
+            structure_parent=db.structure_parents(conn),
+            uberon_is_a=uberon_is_a,
+            uberon_generic=generic_terms(uberon_is_a),
+            labels={**uberon_labels, **{f: n for n, f in names}},
         )
         titles = db.document_titles(conn)
         to_disease, to_structure = doclinks.link(refs, titles, vocab)

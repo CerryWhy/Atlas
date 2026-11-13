@@ -102,3 +102,43 @@ def test_climbing_part_of_never_lands_on_broad_structures() -> None:
     assert ("statpearls:article-3", "FMA:7197") not in {(d, f) for d, f, *_ in structures}
     # ma una sede esatta resta, anche se larga
     assert ("medlineplus:1", "FMA:7197") in {(d, f) for d, f, *_ in structures}
+
+
+def test_structures_without_documents_borrow_from_their_container() -> None:
+    from dataclasses import replace
+
+    v = replace(
+        V,
+        structures_by_uberon={
+            **V.structures_by_uberon,
+            "UBERON:0001114": {"FMA:13362"},  # lobo destro del fegato
+            "UBERON:0001157": {"FMA:14546"},  # colon trasverso
+        },
+        structure_parent={"FMA:13362": "FMA:7197", "FMA:14546": "FMA:71131"},
+        broad=frozenset({"FMA:71131"}),  # tratto gastrointestinale: troppo largo
+        uberon_is_a={"UBERON:0001157": {"UBERON:0000168"}},
+        uberon_part_of={**V.uberon_part_of, "UBERON:0000168": {"UBERON:0001155"}},
+        labels={"FMA:7197": "Liver", "UBERON:0001155": "colon"},
+    )
+    refs = [*REFS, ("medlineplus:2", "MESH", "D003108")]
+    v = replace(v, uberon_by_mesh={**v.uberon_by_mesh, "MESH:D003108": "UBERON:0001155"})
+    _, structures = doclinks.link(refs, TITLES, v)
+    got = {(d, f): (r, b, via) for d, f, r, b, via in structures}
+    # il lobo destro (senza documenti propri) prende quelli diretti del fegato
+    assert got[("statpearls:article-1", "FMA:13362")] == (0.3, "container", "Liver (FMA:7197)")
+    # il colon trasverso: in scena il genitore è troppo largo; via UBERON is_a + part_of
+    assert got[("medlineplus:2", "FMA:14546")] == (0.3, "container", "colon (UBERON:0001155)")
+
+
+def test_generic_uberon_terms_are_not_containers() -> None:
+    from dataclasses import replace
+
+    v = replace(
+        V,
+        structures_by_uberon={**V.structures_by_uberon, "UBERON:0001157": {"FMA:14546"}},
+        uberon_is_a={"UBERON:0001157": {"UBERON:0001155"}},
+        uberon_generic=frozenset({"UBERON:0001155"}),
+        uberon_by_mesh={**V.uberon_by_mesh, "MESH:D003108": "UBERON:0001155"},
+    )
+    _, structures = doclinks.link([("medlineplus:2", "MESH", "D003108")], {}, v)
+    assert ("medlineplus:2", "FMA:14546") not in {(d, f) for d, f, *_ in structures}

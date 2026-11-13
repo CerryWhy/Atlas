@@ -83,6 +83,7 @@ _LINK_TEXT = {
     "mesh_anatomy": "Tratta questa struttura (MeSH)",
     "disease_site": "Tramite la malattia",
     "disease_site_part": "Tramite la malattia, in una sua parte",
+    "container": "Dalla struttura che la contiene",
 }
 
 
@@ -92,6 +93,8 @@ def _reading(r: sqlite3.Row) -> Reading:
     link = _LINK_TEXT.get(r["basis"], r["basis"])
     if r["basis"].startswith("disease_site"):
         link += f": {r['via_label'] or r['via']}"
+    elif r["basis"] == "container":
+        link += f": {r['via']}"  # "Liver (FMA:7197)"
     return Reading(
         doc_id=r["doc_id"],
         source=r["source"],

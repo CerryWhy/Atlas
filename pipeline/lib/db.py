@@ -519,6 +519,14 @@ def link_vocab_rows(
     return diseases, names, uberon, sites
 
 
+def structure_parents(conn: sqlite3.Connection) -> dict[str, str]:
+    """FMA → genitore nell'albero part_of della scena (parent_fma_id)."""
+    rows = conn.execute(
+        "SELECT fma_id, parent_fma_id FROM structure WHERE parent_fma_id IS NOT NULL"
+    )
+    return {r[0]: r[1] for r in rows}
+
+
 def document_titles(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
     return {r[0]: (r[1], r[2]) for r in conn.execute("SELECT doc_id, source, title FROM document")}
 

@@ -235,8 +235,12 @@ def test_scene_layers_have_bones_and_muscles(conn: sqlite3.Connection) -> None:
             "SELECT tissue, COUNT(*) FROM structure WHERE mesh_node IS NOT NULL GROUP BY tissue"
         ).fetchall()
     )
-    assert tissues.get("bone", 0) > 50, tissues
-    assert tissues.get("muscle", 0) > 50, tissues
+    # Misurato il 13/11/2026 sui dati reali: bone 234, muscle 47, skin 1. BodyParts3D
+    # (insieme part-of) ha pochi muscoli scheletrici: ~35 nomi, quasi tutti doppi destra/
+    # sinistra. La prima soglia (> 50) era una stima sbagliata; queste proteggono da un
+    # crollo (es. un nome di TISSUE_CLASSES che sparisce da FMA), non da numeri bassi.
+    assert tissues.get("bone", 0) > 150, tissues
+    assert tissues.get("muscle", 0) > 30, tissues
     assert set(tissues) <= {None, "skin", "muscle", "bone"}
 
 

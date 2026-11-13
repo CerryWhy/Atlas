@@ -19,6 +19,12 @@ Strutture (basis, relevance):
                         dichiarato, al più MAX_PART_OF_HOPS passi): una malattia del
                         lobulo epatico riguarda il fegato. Non si arriva alle strutture
                         "larghe" (apparati, regioni: Vocab.broad), che non direbbero nulla
+- 'container'     0.3   ultima risorsa, per le strutture rimaste senza documenti: i
+                        documenti diretti della struttura che le contiene, la più vicina
+                        (albero part_of della scena, o part_of/is_a di UBERON), al più
+                        MAX_CONTAINER_HOPS passi, mai un apparato intero (Vocab.broad)
+                        né una categoria UBERON (Vocab.uberon_generic: "artery");
+                        al più MAX_CONTAINER_DOCS. "Lobo destro del fegato" → "fegato"
 Per ogni coppia documento–struttura vale il legame più forte.
 
 I titoli di anatomia di StatPearls premettono spesso la regione ("Foot Talus",
@@ -32,14 +38,24 @@ Togliere una parola qualsiasi non è sicuro: "Lumbosacral Trunk" diventerebbe "t
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 RELEVANCE = {
     "anatomy_title": 1.0,
     "mesh_anatomy": 0.8,
     "disease_site": 0.5,
     "disease_site_part": 0.4,
+    "container": 0.3,
 }
+# Legami "diretti": dicono qualcosa della struttura stessa e si possono ereditare.
+DIRECT = ("anatomy_title", "mesh_anatomy", "disease_site")
+MAX_CONTAINER_HOPS = 2
+MAX_CONTAINER_DOCS = 25
+# Un termine UBERON con più sottoclassi (is_a) di così è una categoria, non un
+# contenitore: "artery" (440), "vein" (360), "vertebra" (50) direbbero poco della
+# struttura. Misurato su UBERON 2026: i contenitori utili ne hanno ≤ 16 ("bile duct"),
+# le categorie ≥ 50; la soglia sta nel vuoto tra i due gruppi.
+MAX_CONTAINER_SUBCLASSES = 30
 MAX_PART_OF_HOPS = 2
 
 
@@ -100,6 +116,12 @@ class Vocab:
     disease_sites: Mapping[str, set[str]]  # MONDO → UBERON (disease_structure)
     uberon_part_of: Mapping[str, set[str]]  # UBERON → i "tutto" dichiarati (part_of)
     broad: frozenset[str] = frozenset()  # FMA troppo larghe per la risalita part_of
+    structure_parent: Mapping[str, str] = field(default_factory=dict)  # FMA → FMA genitore
+    # UBERON → superclassi (is_a): solo per la risalita 'container', non per le sedi
+    uberon_is_a: Mapping[str, set[str]] = field(default_factory=dict)
+    # UBERON con più di MAX_CONTAINER_SUBCLASSES sottoclassi: né contenitore né passaggio
+    uberon_generic: frozenset[str] = frozenset()
+    labels: Mapping[str, str] = field(default_factory=dict)  # FMA/UBERON → nome
 
 
 DiseaseLink = tuple[str, str, str, str]  # doc_id, mondo_id, basis, via
@@ -119,6 +141,10 @@ def link(
         if mondo in v.diseases:
             diseases.setdefault((doc, mondo), (doc, mondo, basis, via))
 
+    # documenti per termine UBERON, anche quando nessuna struttura in scena lo porta:
+    # servono alla risalita 'container'
+    by_uberon: dict[str, set[str]] = defaultdict(set)
+
     def add_structure(doc: str, fma: str, basis: str, via: str) -> None:
         rel = RELEVANCE[basis]
         old = structures.get((doc, fma))
@@ -134,6 +160,7 @@ def link(
             if (mondo := v.mondo_by_xref.get(key)) is not None:
                 add_disease(doc, mondo, basis, key)
             if scheme == "MESH" and (uberon := v.uberon_by_mesh.get(key)) is not None:
+                by_uberon[uberon].add(doc)
                 for fma in v.structures_by_uberon.get(uberon, ()):
                     add_structure(doc, fma, "mesh_anatomy", key)
         elif scheme == "anatomy":
@@ -143,6 +170,7 @@ def link(
                     hits = {named}
                 elif (uberon := v.uberon_by_name.get(name)) is not None:
                     hits = set(v.structures_by_uberon.get(uberon, ()))
+                    by_uberon[uberon].add(doc)
                 for fma in hits:
                     add_structure(doc, fma, "anatomy_title", name)
                 if hits:
@@ -159,10 +187,73 @@ def link(
     # dalla malattia alla sua sede (o, se la sede non è in scena, al "tutto" più vicino)
     for doc, mondo, _basis, _via in list(diseases.values()):
         for uberon in v.disease_sites.get(mondo, ()):
+            by_uberon[uberon].add(doc)
             for fma, hops in _site_structures(uberon, v):
                 add_structure(doc, fma, "disease_site" if hops == 0 else "disease_site_part", mondo)
 
+    # ultima risorsa: dalla struttura che contiene quella rimasta senza documenti
+    direct: dict[str, list[tuple[float, str]]] = defaultdict(list)
+    for doc, fma, rel, basis, _via in structures.values():
+        if basis in DIRECT:
+            direct[fma].append((rel, doc))
+    uberons_of: dict[str, set[str]] = defaultdict(set)
+    for u, fmas in v.structures_by_uberon.items():
+        for f in fmas:
+            uberons_of[f].add(u)
+    covered = {fma for _doc, fma in structures}
+    for fma in sorted(set(v.structure_parent) | set(uberons_of)):
+        if fma in covered:
+            continue
+        whole, docs = _container_docs(fma, v, direct, by_uberon, uberons_of)
+        for doc in docs:
+            add_structure(doc, fma, "container", whole)
+
     return sorted(diseases.values()), sorted(structures.values())
+
+
+def _container_docs(
+    fma: str,
+    v: Vocab,
+    direct: Mapping[str, list[tuple[float, str]]],
+    by_uberon: Mapping[str, set[str]],
+    uberons_of: Mapping[str, set[str]],
+) -> tuple[str, list[str]]:
+    """("nome (ID)" del contenitore più vicino con documenti diretti, i suoi documenti).
+    Risale insieme l'albero della scena (FMA) e part_of di UBERON, un passo alla volta;
+    a parità di distanza vince l'ID più basso. Non attraversa le strutture larghe."""
+    frontier: list[str] = [fma, *sorted(uberons_of.get(fma, ()))]
+    seen = set(frontier)
+    for _hop in range(MAX_CONTAINER_HOPS):
+        nxt: list[str] = []
+        for node in frontier:
+            if node.startswith("UBERON:"):
+                ups = sorted(v.uberon_part_of.get(node, set()) | v.uberon_is_a.get(node, set()))
+            else:
+                parent = v.structure_parent.get(node)
+                ups = [parent] if parent and parent not in v.broad else []
+                if parent and parent not in v.broad:
+                    ups += sorted(uberons_of.get(parent, ()))
+            for up in ups:
+                if up in v.uberon_generic:
+                    continue
+                if up not in seen:
+                    seen.add(up)
+                    nxt.append(up)
+        hits = []
+        for node in sorted(nxt):
+            if node.startswith("UBERON:"):
+                docs = sorted(by_uberon.get(node, ()))
+            else:
+                docs = [d for _r, d in sorted(direct.get(node, ()), key=lambda x: (-x[0], x[1]))]
+            if docs:
+                hits.append((node, docs))
+        if hits:
+            # preferisci una struttura in scena (FMA) a un termine UBERON
+            node, docs = min(hits, key=lambda h: (h[0].startswith("UBERON:"), h[0]))
+            label = v.labels.get(node, node)
+            return f"{label} ({node})", docs[:MAX_CONTAINER_DOCS]
+        frontier = nxt
+    return "", []
 
 
 def _site_structures(uberon: str, v: Vocab) -> list[tuple[str, int]]:
