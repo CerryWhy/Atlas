@@ -32,24 +32,32 @@ class Geometry:
     radius: float
 
 
-def load_elements(zip_path: Path, element_ids: list[str]) -> trimesh.Trimesh:
-    """Carica e fonde gli elementi FJ*.obj che compongono una struttura."""
+def load_each(zip_path: Path, element_ids: list[str]) -> dict[str, trimesh.Trimesh]:
+    """Carica gli elementi FJ*.obj, già in metri e Y-up, uno per id."""
+    out: dict[str, trimesh.Trimesh] = {}
     with zipfile.ZipFile(zip_path) as zf:
         index = {Path(n).stem: n for n in zf.namelist() if n.lower().endswith(".obj")}
         missing = [e for e in element_ids if e not in index]
         if missing:
             raise FileNotFoundError(f"Elementi assenti nell'archivio: {missing}")
-        parts = []
         for eid in element_ids:
             data = zf.read(index[eid])
-            loaded = trimesh.load(io.BytesIO(data), file_type="obj", force="mesh", process=False)
-            parts.append(loaded)
-    merged = trimesh.util.concatenate(parts)
-    assert isinstance(merged, trimesh.Trimesh)
-    merged.merge_vertices()
-    merged.apply_scale(MM_TO_M)  # type: ignore[no-untyped-call]
-    merged.apply_transform(Z_UP_TO_Y_UP)
-    return merged
+            m = trimesh.load(io.BytesIO(data), file_type="obj", force="mesh", process=False)
+            assert isinstance(m, trimesh.Trimesh)
+            m.merge_vertices()
+            m.apply_scale(MM_TO_M)  # type: ignore[no-untyped-call]
+            m.apply_transform(Z_UP_TO_Y_UP)
+            out[eid] = m
+    return out
+
+
+def find_gltf_transform(root: Path) -> list[str]:
+    bin_dir = root / "node_modules" / ".bin"
+    for name in ("gltf-transform.cmd", "gltf-transform"):
+        exe = bin_dir / name
+        if exe.exists():
+            return [str(exe)]
+    raise FileNotFoundError("gltf-transform non trovato: eseguire `npm install` nella root")
 
 
 def geometry_of(mesh: trimesh.Trimesh) -> Geometry:

@@ -1,0 +1,26 @@
+// Nomi mostrati all'utente. Le etichette italiane arrivano da FMA quando esistono;
+// altrimenti si mostra il nome inglese (non si traduce a mano: I5).
+
+type Named = { label_en: string; label_it?: string | null };
+
+export const displayName = (s: Named): string => capitalize(s.label_it ?? s.label_en);
+
+export function capitalize(s: string): string {
+  return s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+const REGION_NAMES: Record<string, string> = {
+  abdomen: "Addome",
+  thorax: "Torace",
+  pelvis: "Pelvi",
+  head: "Testa",
+  neck: "Collo",
+  upper_limb: "Arto superiore",
+  lower_limb: "Arto inferiore",
+};
+
+export const regionName = (key: string | null | undefined): string =>
+  key ? (REGION_NAMES[key] ?? capitalize(key)) : "Atlante";
+
+/** 'FMA:7197' → 'FMA 7197' (più leggibile nei testi; l'ID resta quello). */
+export const spellId = (curie: string): string => curie.replace(":", " ");

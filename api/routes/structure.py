@@ -5,7 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 
 from api import queries
 from api.db import get_conn
-from api.models import FMA_PATTERN, Citation, Disease, Structure
+from api.models import (
+    FMA_PATTERN,
+    ChildRef,
+    Citation,
+    Disease,
+    Phenotype,
+    Structure,
+    StructureRef,
+)
 
 router = APIRouter()
 
@@ -50,7 +58,25 @@ def get_structure(conn: Conn, fma_id: Annotated[str, Path(pattern=FMA_PATTERN)])
             )
         )
 
-    citations = []
+    phenotypes = [
+        Phenotype(
+            hpo_id=p["hpo_id"],
+            label=p["label"],
+            citations=[
+                _release_citation(conn, "hpo", _obo_purl(p["hpo_id"]), f"HPO: {p['label']}")
+            ],
+        )
+        for p in queries.phenotypes_for_structure(conn, fma_id)
+    ]
+
+    citations = [
+        _release_citation(
+            conn,
+            "fma",
+            "http://purl.org/sig/ont/fma/fma" + fma_id.removeprefix("FMA:"),
+            f"FMA: {row['label_en']}",
+        )
+    ]
     if row["uberon_id"]:
         citations.append(
             _release_citation(
@@ -81,5 +107,17 @@ def get_structure(conn: Conn, fma_id: Annotated[str, Path(pattern=FMA_PATTERN)])
         centroid=(row["cx"], row["cy"], row["cz"]) if has_centroid else None,
         radius=row["radius"],
         citations=citations,
+        ancestors=[StructureRef(**dict(a)) for a in queries.ancestors(conn, fma_id)],
+        children=[
+            ChildRef(
+                fma_id=c["fma_id"],
+                label_en=c["label_en"],
+                label_it=c["label_it"],
+                has_uberon=bool(c["has_uberon"]),
+            )
+            for c in queries.children(conn, fma_id)
+        ],
+        mesh_nodes=queries.mesh_nodes_under(conn, fma_id),
         diseases=diseases,
+        phenotypes=phenotypes,
     )

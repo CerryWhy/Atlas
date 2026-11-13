@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/regions/{mesh_file}/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Region Nodes */
+        get: operations["get_region_nodes_regions__mesh_file__nodes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/attribution": {
         parameters: {
             query?: never;
@@ -59,6 +76,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ChildRef */
+        ChildRef: {
+            /** Fma Id */
+            fma_id: string;
+            /** Label En */
+            label_en: string;
+            /** Label It */
+            label_it: string | null;
+            /** Has Uberon */
+            has_uberon: boolean;
+        };
         /**
          * Citation
          * @description Riferimento a un documento apribile (I2).
@@ -99,6 +127,37 @@ export interface components {
             region: string | null;
             /** Structures */
             structures: number;
+        };
+        /**
+         * MeshNode
+         * @description Un nodo del GLB e la struttura che un click su di esso seleziona.
+         */
+        MeshNode: {
+            /** Fma Id */
+            fma_id: string;
+            /** Label En */
+            label_en: string;
+            /** Label La */
+            label_la: string | null;
+            /** Label It */
+            label_it: string | null;
+            /** System */
+            system: string | null;
+            /** Focus Fma Id */
+            focus_fma_id: string;
+            /** Focus Label En */
+            focus_label_en: string;
+            /** Focus Label It */
+            focus_label_it: string | null;
+        };
+        /** Phenotype */
+        Phenotype: {
+            /** Hpo Id */
+            hpo_id: string;
+            /** Label */
+            label: string;
+            /** Citations */
+            citations: components["schemas"]["Citation"][];
         };
         /** SourceRelease */
         SourceRelease: {
@@ -149,8 +208,28 @@ export interface components {
             radius: number | null;
             /** Citations */
             citations: components["schemas"]["Citation"][];
+            /** Ancestors */
+            ancestors: components["schemas"]["StructureRef"][];
+            /** Children */
+            children: components["schemas"]["ChildRef"][];
+            /** Mesh Nodes */
+            mesh_nodes: string[];
             /** Diseases */
             diseases: components["schemas"]["Disease"][];
+            /** Phenotypes */
+            phenotypes: components["schemas"]["Phenotype"][];
+        };
+        /**
+         * StructureRef
+         * @description Riferimento leggero a una struttura (briciole di pane, parti).
+         */
+        StructureRef: {
+            /** Fma Id */
+            fma_id: string;
+            /** Label En */
+            label_en: string;
+            /** Label It */
+            label_it: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -225,6 +304,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeshFile"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_region_nodes_regions__mesh_file__nodes_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                mesh_file: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeshNode"][];
                 };
             };
             /** @description Validation Error */

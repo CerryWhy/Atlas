@@ -15,6 +15,8 @@ class Term:
     definition: str | None = None
     obsolete: bool = False
     xrefs: list[str] = field(default_factory=list)
+    # sottoinsieme di xrefs che MONDO marca come equivalenza esatta (MONDO:equivalentTo)
+    equivalent_xrefs: list[str] = field(default_factory=list)
     # (relazione, target) da righe `relationship:` e `intersection_of:` con relazione
     relations: list[tuple[str, str]] = field(default_factory=list)
 
@@ -49,7 +51,10 @@ def iter_terms(path: Path) -> Iterator[Term]:
             elif tag == "is_obsolete":
                 term.obsolete = value.strip() == "true"
             elif tag == "xref":
-                term.xrefs.append(_strip_comment(value).split(" ", 1)[0])
+                xref = _strip_comment(value).split(" ", 1)[0]
+                term.xrefs.append(xref)
+                if 'source="MONDO:equivalentTo"' in value:
+                    term.equivalent_xrefs.append(xref)
             elif tag in ("relationship", "intersection_of"):
                 parts = _strip_comment(value).split()
                 if len(parts) == 2:

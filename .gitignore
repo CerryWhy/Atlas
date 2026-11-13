@@ -3,6 +3,8 @@ data/raw/
 data/atlas.db
 data/atlas.db-*
 data/meshes/
+data/build/
+data/reports/
 
 # Python
 .venv/

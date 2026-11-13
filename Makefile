@@ -5,7 +5,7 @@ dev:
 	npm run dev
 
 pipeline:
-	npm run pipeline:phase0
+	npm run pipeline
 
 types:
 	npm run gen:types

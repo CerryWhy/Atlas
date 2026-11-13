@@ -1,13 +1,26 @@
 import type { components } from "../types/atlas";
-import { asFmaId, asMondoId, type FmaId, type MondoId } from "../types/ids";
+import { asFmaId, type FmaId } from "../types/ids";
 
 type Schemas = components["schemas"];
 export type Citation = Schemas["Citation"];
 export type SourceRelease = Schemas["SourceRelease"];
-export type Disease = Omit<Schemas["Disease"], "mondo_id"> & { mondo_id: MondoId };
-export type Structure = Omit<Schemas["Structure"], "fma_id" | "diseases"> & {
+export type MeshFile = Schemas["MeshFile"];
+export type Disease = Schemas["Disease"];
+export type Phenotype = Schemas["Phenotype"];
+export type StructureRef = Omit<Schemas["StructureRef"], "fma_id"> & { fma_id: FmaId };
+export type ChildRef = Omit<Schemas["ChildRef"], "fma_id"> & { fma_id: FmaId };
+export type MeshNode = Omit<Schemas["MeshNode"], "fma_id" | "focus_fma_id"> & {
   fma_id: FmaId;
-  diseases: Disease[];
+  focus_fma_id: FmaId;
+};
+export type Structure = Omit<
+  Schemas["Structure"],
+  "fma_id" | "ancestors" | "children" | "mesh_nodes"
+> & {
+  fma_id: FmaId;
+  ancestors: StructureRef[];
+  children: ChildRef[];
+  mesh_nodes: FmaId[];
 };
 
 const BASE = "/api";
@@ -18,23 +31,40 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
     signal,
     headers: API_KEY ? { "X-API-Key": API_KEY } : {},
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${path}`);
+  if (!res.ok) throw new Error(`Il server ha risposto ${res.status} a ${path}`);
   return (await res.json()) as T;
 }
+
+const branded = <T extends { fma_id: string }>(x: T): Omit<T, "fma_id"> & { fma_id: FmaId } => ({
+  ...x,
+  fma_id: asFmaId(x.fma_id),
+});
 
 export async function getStructure(id: FmaId, signal?: AbortSignal): Promise<Structure> {
   const raw = await get<Schemas["Structure"]>(`/structure/${encodeURIComponent(id)}`, signal);
   return {
     ...raw,
     fma_id: asFmaId(raw.fma_id),
-    diseases: raw.diseases.map((d) => ({ ...d, mondo_id: asMondoId(d.mondo_id) })),
+    ancestors: raw.ancestors.map(branded),
+    children: raw.children.map(branded),
+    mesh_nodes: raw.mesh_nodes.map(asFmaId),
   };
 }
 
-export type MeshFile = Schemas["MeshFile"];
-
 export function getRegions(signal?: AbortSignal): Promise<MeshFile[]> {
   return get<MeshFile[]>("/regions", signal);
+}
+
+export async function getRegionNodes(file: string, signal?: AbortSignal): Promise<MeshNode[]> {
+  const raw = await get<Schemas["MeshNode"][]>(
+    `/regions/${encodeURIComponent(file)}/nodes`,
+    signal,
+  );
+  return raw.map((n) => ({
+    ...n,
+    fma_id: asFmaId(n.fma_id),
+    focus_fma_id: asFmaId(n.focus_fma_id),
+  }));
 }
 
 export function getAttribution(signal?: AbortSignal): Promise<SourceRelease[]> {

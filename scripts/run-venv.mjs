@@ -11,5 +11,6 @@ if (!existsSync(binDir)) {
 }
 const [cmd, ...args] = process.argv.slice(2);
 const exe = join(binDir, process.platform === "win32" ? `${cmd}.exe` : cmd);
-const child = spawn(existsSync(exe) ? exe : cmd, args, { cwd: root, stdio: "inherit" });
+const env = { ...process.env, PYTHONUTF8: "1" }; // console Windows: niente cp1252
+const child = spawn(existsSync(exe) ? exe : cmd, args, { cwd: root, stdio: "inherit", env });
 child.on("exit", (code) => process.exit(code ?? 1));

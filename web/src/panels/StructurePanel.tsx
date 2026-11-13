@@ -1,116 +1,321 @@
-import { useEffect, useState } from "react";
-import { getStructure, type Structure } from "../api/client";
+import { useState } from "react";
+import type { Citation, Structure } from "../api/client";
+import { displayName, regionName, spellId } from "../lib/labels";
 import { useAtlasStore } from "../store/atlas";
-import { CitationList, indexCitations } from "./CitationList";
+import type { FmaId } from "../types/ids";
+import { CitationList } from "./CitationList";
+import { SearchBox } from "./SearchBox";
 
-type Load =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "error"; message: string }
-  | { state: "ok"; data: Structure };
+const LINK =
+  "text-iodine-700 underline decoration-iodine-600/40 underline-offset-2 hover:decoration-iodine-700";
 
-function Refs({ ns }: { ns: number[] }) {
+type TabKey = "diseases" | "phenotypes" | "parts";
+
+function SourceLink({ cite, children }: { cite: Citation | undefined; children: React.ReactNode }) {
+  if (!cite) return <>{children}</>;
   return (
-    <sup className="ml-1 font-mono text-[10px] text-sky-400">
-      {ns.map((n) => (
-        <a key={n} href={`#cite-${n}`} className="hover:underline">
-          [{n}]
-        </a>
-      ))}
-    </sup>
+    <a
+      href={cite.url}
+      target="_blank"
+      rel="noreferrer"
+      title={`Apri la fonte: ${cite.title}`}
+      className={LINK}
+    >
+      {children}
+    </a>
   );
 }
 
-/** Cosa hai selezionato: identità della struttura e patologie con sede lì. */
-export function StructurePanel() {
-  const selected = useAtlasStore((s) => s.selected);
-  const [load, setLoad] = useState<Load>({ state: "idle" });
+function Intro() {
+  const regions = useAtlasStore((s) => s.regions);
+  const count = useAtlasStore((s) => s.nodes.size);
+  const name = regionName(regions[0]?.region);
+  return (
+    <div className="pt-6">
+      <h2 className="font-serif text-[clamp(1.6rem,4.2vw,2.2rem)] font-medium leading-[1.1] tracking-[-0.01em]">
+        {name}
+      </h2>
+      <p className="mt-3 max-w-[34ch] text-ink-soft">
+        {count > 0
+          ? `${count} strutture in scena. Clicca un organo per aprirne la scheda, oppure cercalo per nome.`
+          : "Sto preparando la tavola."}
+      </p>
+      <dl className="mt-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[0.88rem] text-ink-mute">
+        <dt className="text-ink-soft">Trascina</dt>
+        <dd>ruota la tavola</dd>
+        <dt className="text-ink-soft">Rotella</dt>
+        <dd>avvicina e allontana</dd>
+        <dt className="text-ink-soft">Tasto destro</dt>
+        <dd>sposta l'inquadratura</dd>
+        <dt className="text-ink-soft">Legenda</dt>
+        <dd>mostra, vela o nasconde un gruppo</dd>
+      </dl>
+    </div>
+  );
+}
 
-  useEffect(() => {
-    if (!selected) {
-      setLoad({ state: "idle" });
-      return;
-    }
-    const ctrl = new AbortController();
-    setLoad({ state: "loading" });
-    getStructure(selected, ctrl.signal)
-      .then((data) => setLoad({ state: "ok", data }))
-      .catch((e: unknown) => {
-        if (!ctrl.signal.aborted) setLoad({ state: "error", message: String(e) });
-      });
-    return () => ctrl.abort();
-  }, [selected]);
+function Breadcrumbs({ data }: { data: Structure }) {
+  const select = useAtlasStore((s) => s.select);
+  if (data.ancestors.length === 0) return null;
+  return (
+    <nav aria-label="Parte di" className="text-[0.8rem] leading-relaxed text-ink-mute">
+      <ol className="flex flex-wrap items-baseline gap-x-1">
+        {data.ancestors.map((a) => (
+          <li key={a.fma_id} className="flex items-baseline gap-x-1">
+            <button
+              type="button"
+              onClick={() => select(a.fma_id)}
+              className="cursor-pointer hover:text-iodine-700 hover:underline"
+            >
+              {displayName(a)}
+            </button>
+            <span aria-hidden="true" className="text-gauze-300">
+              ›
+            </span>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
 
-  if (load.state === "idle")
-    return <p className="text-sm text-zinc-400">Clicca una struttura per esplorarla.</p>;
-  if (load.state === "loading") return <p className="text-sm text-zinc-400">Caricamento…</p>;
-  if (load.state === "error") return <p className="text-sm text-red-400">{load.message}</p>;
+function Heading({ title, data }: { title: string; data?: Structure }) {
+  const cite = (source: string) => data?.citations.find((c) => c.source === source);
+  return (
+    <header>
+      <h2
+        data-leader-anchor
+        className="font-serif text-[clamp(1.6rem,4.2vw,2.2rem)] font-medium leading-[1.1] tracking-[-0.01em]"
+      >
+        {title}
+      </h2>
+      {data && (data.label_la || data.label_it) && (
+        <p className="mt-1.5 text-[0.95rem] text-ink-soft">
+          {data.label_la && (
+            <span className="mr-4">
+              <span className="text-ink-mute">lat. </span>
+              <i className="font-serif text-[1.05rem]">{data.label_la}</i>
+            </span>
+          )}
+          {data.label_it && (
+            <span>
+              <span className="text-ink-mute">ingl. </span>
+              {data.label_en}
+            </span>
+          )}
+        </p>
+      )}
+      {data && (
+        <p className="tnum mt-2 flex flex-wrap gap-x-4 text-[0.8rem] text-ink-mute">
+          <SourceLink cite={cite("fma")}>{spellId(data.fma_id)}</SourceLink>
+          {data.uberon_id && (
+            <SourceLink cite={cite("uberon")}>{spellId(data.uberon_id)}</SourceLink>
+          )}
+        </p>
+      )}
+    </header>
+  );
+}
 
-  const s = load.data;
-  const { list, refs } = indexCitations([s.citations, ...s.diseases.map((d) => d.citations)]);
-  const [structureRefs = [], ...diseaseRefs] = refs;
+function Entry({ data }: { data: Structure }) {
+  const select = useAtlasStore((s) => s.select);
+  const tabs: { key: TabKey; label: string; n: number }[] = [
+    { key: "diseases", label: "Patologie", n: data.diseases.length },
+    { key: "phenotypes", label: "Segni", n: data.phenotypes.length },
+    { key: "parts", label: "Parti", n: data.children.length },
+  ];
+  const firstFilled = tabs.find((t) => t.n > 0)?.key ?? "diseases";
+  const [picked, setPicked] = useState<TabKey | null>(null);
+  const tab = picked && tabs.some((t) => t.key === picked && t.n > 0) ? picked : firstFilled;
+  const nothing = tabs.every((t) => t.n === 0);
+
+  const citations = [
+    ...data.citations,
+    ...data.diseases.flatMap((d) => d.citations),
+    ...data.phenotypes.flatMap((p) => p.citations),
+  ];
 
   return (
-    <div className="space-y-5">
-      <header>
-        <h2 className="text-xl font-semibold capitalize text-zinc-100">
-          {s.label_it ?? s.label_en}
-          <Refs ns={structureRefs} />
-        </h2>
-        {s.label_la && <p className="italic text-zinc-400">{s.label_la}</p>}
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 font-mono text-xs text-zinc-400">
-          <dt>FMA</dt>
-          <dd>{s.fma_id}</dd>
-          {s.uberon_id && (
-            <>
-              <dt>UBERON</dt>
-              <dd>{s.uberon_id}</dd>
-            </>
-          )}
-          {s.system && (
-            <>
-              <dt>Sistema</dt>
-              <dd>{s.system}</dd>
-            </>
-          )}
-        </dl>
-      </header>
+    <div className="pt-5">
+      <Breadcrumbs data={data} />
+      <div className="mt-1.5">
+        <Heading title={displayName(data)} data={data} />
+      </div>
 
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Patologie con sede in questa struttura
-        </h3>
-        {s.diseases.length === 0 ? (
-          <p className="text-sm text-zinc-500">Nessuna patologia collegata in atlas.db.</p>
-        ) : (
-          <ul className="space-y-2">
-            {s.diseases.map((d, i) => (
-              <li key={d.mondo_id} className="rounded-md bg-zinc-800/60 px-3 py-2">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-sm text-zinc-100">
-                    {d.label}
-                    <Refs ns={diseaseRefs[i] ?? []} />
-                  </span>
+      {data.diseases.length + data.phenotypes.length === 0 && (
+        <p className="mt-4 border-l-2 border-gauze-300 pl-3 text-[0.88rem] text-ink-soft">
+          {data.uberon_id
+            ? "Le fonti caricate non collegano patologie o segni direttamente a questa struttura: di solito li registrano sull'organo senza lato o su una struttura più ampia."
+            : "Questa struttura non ha un collegamento alle ontologie cliniche."}{" "}
+          {data.ancestors.length > 0 && "Risali la gerarchia qui sopra per trovarli."}
+        </p>
+      )}
+
+      {!nothing && (
+        <div role="tablist" aria-label="Contenuti della scheda" className="mt-6 flex gap-5">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.key}
+              disabled={t.n === 0}
+              onClick={() => setPicked(t.key)}
+              className={`-mb-px cursor-pointer border-b-2 pb-1.5 text-[0.92rem] disabled:cursor-default disabled:text-gauze-300 ${
+                tab === t.key
+                  ? "border-iodine-600 font-semibold text-ink"
+                  : "border-transparent text-ink-mute hover:text-ink"
+              }`}
+            >
+              {t.label} <span className="tnum font-normal text-ink-mute">{t.n}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div role="tabpanel" className="border-t border-gauze-300">
+        {tab === "diseases" && data.diseases.length > 0 && (
+          <ul>
+            {data.diseases.map((d) => {
+              const mondo = d.citations.find((c) => c.source === "mondo");
+              const icd = d.citations.find((c) => c.source === "icd11");
+              return (
+                <li
+                  key={d.mondo_id}
+                  className="flex items-baseline justify-between gap-3 border-b border-gauze-200 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="leading-snug">{d.label}</div>
+                    <div className="tnum text-[0.78rem] text-ink-mute">
+                      <SourceLink cite={mondo}>{spellId(d.mondo_id)}</SourceLink>
+                    </div>
+                  </div>
                   {d.icd11_code && (
-                    <span
-                      className="shrink-0 rounded bg-amber-900/50 px-1.5 py-0.5 font-mono text-xs text-amber-200"
-                      title="Codice ICD-11 MMS"
+                    <a
+                      href={icd?.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Codice ICD-11 MMS ${icd?.version ?? ""}. Apri la fonte.`}
+                      className="tnum shrink-0 rounded-[3px] bg-iodine-100 px-1.5 py-0.5 text-[0.8rem] font-medium text-iodine-700 hover:bg-iodine-300"
                     >
                       {d.icd11_code}
-                    </span>
+                    </a>
                   )}
-                </div>
-                <div className="font-mono text-[11px] text-zinc-500">{d.mondo_id}</div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {tab === "phenotypes" && data.phenotypes.length > 0 && (
+          <ul>
+            {data.phenotypes.map((p) => (
+              <li
+                key={p.hpo_id}
+                className="flex items-baseline justify-between gap-3 border-b border-gauze-200 py-1.5"
+              >
+                <span className="leading-snug">{p.label}</span>
+                <span className="tnum shrink-0 text-[0.78rem] text-ink-mute">
+                  <SourceLink cite={p.citations[0]}>{spellId(p.hpo_id)}</SourceLink>
+                </span>
               </li>
             ))}
           </ul>
         )}
-      </section>
 
-      <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Fonti</h3>
-        <CitationList citations={list} />
-      </section>
+        {tab === "parts" && data.children.length > 0 && (
+          <>
+            <ul>
+              {data.children.map((c) => (
+                <li key={c.fma_id} className="border-b border-gauze-200">
+                  <button
+                    type="button"
+                    onClick={() => select(c.fma_id as FmaId)}
+                    className="flex w-full cursor-pointer items-baseline gap-2 py-1.5 text-left hover:text-iodine-700"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`mb-px inline-block size-1.5 shrink-0 self-center rounded-full ${
+                        c.has_uberon ? "bg-iodine-600" : "bg-gauze-300"
+                      }`}
+                    />
+                    <span className="leading-snug">{displayName(c)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {data.children.some((c) => c.has_uberon) && (
+              <p className="mt-2 flex items-center gap-2 text-[0.78rem] text-ink-mute">
+                <span
+                  aria-hidden="true"
+                  className="inline-block size-1.5 rounded-full bg-iodine-600"
+                />
+                ha un collegamento clinico
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      <CitationList citations={citations} />
     </div>
+  );
+}
+
+/** La scheda: cosa hai selezionato, cosa lo riguarda, da dove viene ogni voce. */
+export function StructurePanel() {
+  const detail = useAtlasStore((s) => s.detail);
+  const selected = useAtlasStore((s) => s.selected);
+  const select = useAtlasStore((s) => s.select);
+  // Il nome noto prima che arrivi la scheda: dal nodo o dal suo organo di fuoco.
+  const known = useAtlasStore((s) => {
+    if (!s.selected) return null;
+    const own = s.nodes.get(s.selected);
+    if (own) return displayName(own);
+    for (const n of s.nodes.values()) {
+      if (n.focus_fma_id === s.selected) {
+        return displayName({ label_en: n.focus_label_en, label_it: n.focus_label_it });
+      }
+    }
+    return null;
+  });
+
+  return (
+    <aside
+      data-sheet
+      aria-label="Scheda della struttura"
+      className="sheet absolute inset-x-0 bottom-0 h-[var(--sheet-h)] overflow-y-auto rounded-t-md wide:inset-x-auto wide:bottom-4 wide:right-4 wide:top-4 wide:h-auto wide:w-[var(--sheet-w)] wide:rounded-md"
+    >
+      <div className="sticky top-0 z-10 bg-gauze-100 px-6 pt-3">
+        <SearchBox />
+      </div>
+      <div className="px-6 pb-7">
+        {detail.state === "idle" && <Intro />}
+        {detail.state === "loading" && (
+          <div className="pt-5">
+            <Heading title={known ?? "…"} />
+            <p className="mt-3 text-[0.9rem] text-ink-mute">Carico la scheda.</p>
+          </div>
+        )}
+        {detail.state === "error" && (
+          <div className="pt-5">
+            <Heading title={known ?? "Scheda non disponibile"} />
+            <p className="mt-3 text-[0.9rem] text-ink-soft">
+              Non riesco a leggere la scheda dal server. {detail.message}.
+            </p>
+            {selected && (
+              <button
+                type="button"
+                onClick={() => select(selected)}
+                className={`mt-2 cursor-pointer text-[0.9rem] ${LINK}`}
+              >
+                Riprova
+              </button>
+            )}
+          </div>
+        )}
+        {detail.state === "ok" && <Entry key={detail.data.fma_id} data={detail.data} />}
+      </div>
+    </aside>
   );
 }

@@ -7,6 +7,7 @@ dependencies = [
   "uvicorn[standard]",
   "trimesh",
   "numpy",
+  "scipy",
 ]
 
 [project.optional-dependencies]

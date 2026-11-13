@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 FMA_PATTERN = r"^FMA:\d+$"
 MONDO_PATTERN = r"^MONDO:\d{7}$"
+HPO_PATTERN = r"^HP:\d{7}$"
 
 
 class Citation(BaseModel):
@@ -23,6 +24,24 @@ class Disease(BaseModel):
     citations: list[Citation] = Field(min_length=1)
 
 
+class Phenotype(BaseModel):
+    hpo_id: str = Field(pattern=HPO_PATTERN)
+    label: str
+    citations: list[Citation] = Field(min_length=1)
+
+
+class StructureRef(BaseModel):
+    """Riferimento leggero a una struttura (briciole di pane, parti)."""
+
+    fma_id: str = Field(pattern=FMA_PATTERN)
+    label_en: str
+    label_it: str | None
+
+
+class ChildRef(StructureRef):
+    has_uberon: bool
+
+
 class Structure(BaseModel):
     fma_id: str = Field(pattern=FMA_PATTERN)
     label_en: str
@@ -38,13 +57,30 @@ class Structure(BaseModel):
     centroid: tuple[float, float, float] | None
     radius: float | None
     citations: list[Citation]
+    ancestors: list[StructureRef]
+    children: list[ChildRef]
+    mesh_nodes: list[str]
     diseases: list[Disease]
+    phenotypes: list[Phenotype]
 
 
 class MeshFile(BaseModel):
     mesh_file: str
     region: str | None
     structures: int
+
+
+class MeshNode(BaseModel):
+    """Un nodo del GLB e la struttura che un click su di esso seleziona."""
+
+    fma_id: str = Field(pattern=FMA_PATTERN)
+    label_en: str
+    label_la: str | None
+    label_it: str | None
+    system: str | None
+    focus_fma_id: str = Field(pattern=FMA_PATTERN)
+    focus_label_en: str
+    focus_label_it: str | None
 
 
 class SourceRelease(BaseModel):
