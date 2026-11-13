@@ -10,7 +10,10 @@
     "pipeline:meshes": "node scripts/run-venv.mjs python -m pipeline.02_build_meshes",
     "pipeline:ontologies": "node scripts/run-venv.mjs python -m pipeline.03_load_ontologies",
     "pipeline:bridge": "node scripts/run-venv.mjs python -m pipeline.04_bridge_fma_uberon",
-    "pipeline": "npm run pipeline:fetch && npm run pipeline:meshes && npm run pipeline:ontologies && npm run pipeline:bridge",
+    "pipeline:documents": "node scripts/run-venv.mjs python -m pipeline.05_ingest_documents",
+    "pipeline:links": "node scripts/run-venv.mjs python -m pipeline.06_link_documents",
+    "pipeline:embed": "node scripts/run-venv.mjs python -m pipeline.07_embed",
+    "pipeline": "npm run pipeline:fetch && npm run pipeline:meshes && npm run pipeline:ontologies && npm run pipeline:bridge && npm run pipeline:documents && npm run pipeline:links && npm run pipeline:embed",
     "dev:api:reload": "node scripts/run-venv.mjs uvicorn api.main:app --reload --reload-dir api --port 8000"
   },
   "devDependencies": {

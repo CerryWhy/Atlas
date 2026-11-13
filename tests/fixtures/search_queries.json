@@ -1,0 +1,27 @@
+{
+  "_nota": "Fase 3, accettazione: 20 domande di prova per la ricerca vettoriale, scritte PRIMA dell'implementazione. Una domanda passa se tra i primi `k` chunk ce n'è uno di un documento il cui titolo contiene (senza maiuscole) almeno una delle stringhe attese. Le domande sono in italiano, come le scriverebbe uno studente.",
+  "k": 5,
+  "min_pass": 18,
+  "queries": [
+    {"q": "anatomia del fegato e sua vascolarizzazione", "titles": ["liver"]},
+    {"q": "cause della cirrosi epatica", "titles": ["cirrhosis"]},
+    {"q": "sintomi dell'appendicite acuta", "titles": ["appendicitis"]},
+    {"q": "calcoli della colecisti e colica biliare", "titles": ["cholelithiasis", "gallstone", "biliary colic", "cholecystitis"]},
+    {"q": "eziologia della pancreatite acuta", "titles": ["pancreatitis"]},
+    {"q": "ulcera peptica da Helicobacter pylori", "titles": ["peptic ulcer", "helicobacter"]},
+    {"q": "malattia di Crohn dell'intestino tenue", "titles": ["crohn"]},
+    {"q": "insufficienza renale acuta", "titles": ["acute kidney injury", "kidney failure", "renal failure"]},
+    {"q": "calcolosi renale e coliche", "titles": ["nephrolithiasis", "kidney stone", "renal calculi", "urolithiasis"]},
+    {"q": "ernia inguinale nell'adulto", "titles": ["inguinal hernia", "hernia"]},
+    {"q": "aneurisma dell'aorta addominale", "titles": ["aortic aneurysm"]},
+    {"q": "infarto del miocardio acuto", "titles": ["myocardial infarction", "heart attack"]},
+    {"q": "frattura del calcagno", "titles": ["calcaneus", "calcaneal"]},
+    {"q": "lesione del nervo radiale al braccio", "titles": ["radial nerve"]},
+    {"q": "milza ingrossata, splenomegalia", "titles": ["spleen", "splenomegaly"]},
+    {"q": "malattia di Canavan", "titles": ["canavan"]},
+    {"q": "ipotiroidismo e tiroide poco attiva", "titles": ["hypothyroidism"]},
+    {"q": "embolia polmonare", "titles": ["pulmonary embolism"]},
+    {"q": "rottura del legamento crociato anteriore del ginocchio", "titles": ["anterior cruciate"]},
+    {"q": "ittero nel neonato", "titles": ["jaundice", "hyperbilirubinemia"]}
+  ]
+}

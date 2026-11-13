@@ -78,6 +78,32 @@ class Structure(BaseModel):
     mesh_nodes: list[str]
     diseases: list[Disease]
     phenotypes: list[Phenotype]
+    documents: list["Reading"]
+
+
+class Reading(BaseModel):
+    """Un documento del corpus collegato alla struttura (Fase 3).
+
+    `citation` è il documento stesso (apribile, con licenza); `link` spiega perché è
+    qui: il capitolo tratta la struttura, o tratta una malattia con sede in essa."""
+
+    doc_id: str
+    source: str  # 'statpearls' | 'medlineplus' | 'orphanet'
+    title: str
+    basis: str  # 'anatomy_title' | 'mesh_anatomy' | 'disease_site' | 'disease_site_part'
+    relevance: float
+    link: str  # es. "Tratta: Liver" | "Tramite la malattia: hepatitis B"
+    citation: Citation
+
+
+class SearchHit(BaseModel):
+    """Un chunk restituito dalla ricerca vettoriale, con il documento da citare."""
+
+    chunk_id: str
+    doc_id: str
+    text: str
+    score: float  # similarità coseno, 1 = identico
+    citation: Citation
 
 
 class MeshFile(BaseModel):

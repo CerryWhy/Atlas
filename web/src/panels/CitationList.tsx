@@ -9,7 +9,13 @@ const SOURCE_NAMES: Record<string, string> = {
   mondo: "Mondo Disease Ontology",
   doid: "Human Disease Ontology",
   icd11: "ICD-11 MMS",
+  wikidata: "Wikidata",
+  statpearls: "StatPearls",
+  medlineplus: "MedlinePlus",
+  orphanet: "Orphanet",
 };
+
+export const sourceName = (source: string): string => SOURCE_NAMES[source] ?? source;
 
 /** 'uberon/releases/2026-11-05/uberon-basic.owl' → '2026-11-05' (solo per la lettura). */
 export function shortVersion(version: string): string {
@@ -35,7 +41,7 @@ export function CitationList({ citations }: { citations: Citation[] }) {
         {[...bySource.values()].map((c) => (
           <div key={c.source} className="contents">
             <dt>
-              {SOURCE_NAMES[c.source] ?? c.source}
+              {sourceName(c.source)}
               <span className="tnum"> {shortVersion(c.version)}</span>
             </dt>
             <dd className="text-right">{c.license}</dd>

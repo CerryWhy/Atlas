@@ -18,7 +18,9 @@ la isola. La copertura clinica è disomogenea tra regioni: vedi `data/reports/co
 
 ```bash
 python -m venv .venv
-.venv/Scripts/pip install -e ".[dev]"      # POSIX: .venv/bin/pip
+.venv/Scripts/pip install -e ".[dev,embed]"   # POSIX: .venv/bin/pip
+# Con una GPU NVIDIA, PRIMA di questa riga installare torch con CUDA
+# (https://pytorch.org/get-started/locally/): gli embedding di 07 vanno in minuti.
 npm install
 npm --prefix web install
 ```
@@ -35,11 +37,14 @@ npm run pipeline             # tutti i passi, in ordine
 | `npm run pipeline:meshes` | `pipeline/02_build_meshes.py` | OBJ → GLB Draco della regione attiva, centroidi e raggi (`data/build/geometry.json`) |
 | `npm run pipeline:ontologies` | `pipeline/03_load_ontologies.py` | FMA, HPO, HPOA, MONDO, Disease Ontology, ICD-11, nomi italiani Wikidata → tabelle |
 | `npm run pipeline:bridge` | `pipeline/04_bridge_fma_uberon.py` | Crosswalk FMA ↔ UBERON, tabella `unmapped`, report in `data/reports/` |
+| `npm run pipeline:documents` | `pipeline/05_ingest_documents.py` | MedlinePlus, Orphanet, StatPearls → `document`, con licenza per documento |
+| `npm run pipeline:links` | `pipeline/06_link_documents.py` | Documento → malattia (MONDO) e → struttura (FMA), report `documents.md` |
+| `npm run pipeline:embed` | `pipeline/07_embed.py` | Chunk ed embedding locali in `sqlite-vec` (`chunk_vec`) |
 
 Ogni script è idempotente. Nessun ID viene costruito: ciò che non si trova nei file
 scaricati finisce in `unmapped` (invariante I5). **Dopo ogni esecuzione vanno letti
-`data/reports/coverage.md`, `data/reports/unmapped_<regione>.md` e
-`data/reports/is_a_links.md`.**
+`data/reports/coverage.md`, `data/reports/unmapped_<regione>.md`,
+`data/reports/is_a_links.md` e `data/reports/documents.md`.**
 
 ### Scelte di Fase 1 da conoscere
 
@@ -94,6 +99,32 @@ scaricati finisce in `unmapped` (invariante I5). **Dopo ogni esecuzione vanno le
 - **Estensioni allo schema di SPEC §6:** tabelle `source_release` (versione e licenza
   di ogni fonte) e `structure_uberon` (legami con provenienza), colonne
   `disease_structure.source/source_id`, indici sulle tabelle di relazione.
+
+### Scelte di Fase 3 da conoscere
+
+- **Licenze, documento per documento (I3).** MedlinePlus: i riassunti dei temi sono
+  pubblico dominio (https://medlineplus.gov/about/using/usingcontent/). Orphanet: la
+  CC BY 4.0 è dichiarata nel file Orphadata. StatPearls: ogni capitolo dichiara la sua
+  licenza nel file; al 13/11/2026 8.660 capitoli su 8.661 sono CC BY-NC-ND 4.0 (uno CC
+  BY 4.0). È la risposta alla domanda aperta della SPEC §13: si possono ridistribuire,
+  **senza modifiche e non a fini commerciali**. I chunk sono estratti testuali non
+  modificati; la scheda rimanda sempre al capitolo originale.
+- **StatPearls solo dall'FTP ufficiale NCBI** (SPEC §3): un unico archivio da ~2 GB,
+  letto in streaming senza estrarlo. I capitoli "(Archived)" e le versioni
+  "nurse-article" si saltano; i rimandi bibliografici `[1]` si tolgono dal testo (nella
+  Fase 4 i marcatori `[n]` sono quelli delle citazioni dell'assistente).
+- **Legami solo da riferimenti dichiarati (I5)** (`pipeline/lib/doclinks.py`): codici
+  MeSH e ORPHAcode tramite le equivalenze esatte di MONDO, MONDO citato da Orphanet,
+  MeSH anatomici tramite UBERON, titolo dei capitoli di anatomia ("Anatomy, Abdomen and
+  Pelvis, Liver") per nome esatto, titolo dei capitoli su una malattia per nome o
+  sinonimo EXACT di MONDO. Dalla malattia si arriva alla sua sede, anche risalendo
+  `part_of` di UBERON di al più due passi ma mai fino a un apparato intero. Ogni legame
+  registra `basis` e `via`; la scheda li mostra.
+- **Embedding.** `intfloat/multilingual-e5-base` (MIT) in locale, con i prefissi
+  `query:`/`passage:` di E5; `sqlite-vec` con distanza coseno. Senza GPU l'indice
+  completo (~140.000 chunk) richiede ore: `--first-chunks 1` fa una prova rapida
+  sull'apertura di ogni documento. L'API codifica la domanda con lo stesso modello
+  registrato in `embedding_meta`.
 
 ## Sviluppo
 

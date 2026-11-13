@@ -8,10 +8,14 @@ dependencies = [
   "trimesh",
   "numpy",
   "scipy",
+  "sqlite-vec",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx", "ruff", "mypy"]
+# Embedding locali (07 e ricerca dell'API). Su GPU NVIDIA installare prima torch con CUDA
+# seguendo https://pytorch.org/get-started/locally/, poi questo gruppo.
+embed = ["sentence-transformers"]
 
 [tool.ruff]
 line-length = 100

@@ -4,13 +4,13 @@ import { contentLinks, inheritanceKind, inheritanceSentence } from "../lib/inher
 import { displayName, sceneName, spellId } from "../lib/labels";
 import { useAtlasStore } from "../store/atlas";
 import type { FmaId } from "../types/ids";
-import { CitationList } from "./CitationList";
+import { CitationList, sourceName } from "./CitationList";
 import { SearchBox } from "./SearchBox";
 
 const LINK =
   "text-iodine-700 underline decoration-iodine-600/40 underline-offset-2 hover:decoration-iodine-700";
 
-type TabKey = "diseases" | "phenotypes" | "parts";
+type TabKey = "diseases" | "phenotypes" | "readings" | "parts";
 
 function SourceLink({ cite, children }: { cite: Citation | undefined; children: React.ReactNode }) {
   if (!cite) return <>{children}</>;
@@ -183,6 +183,7 @@ function Entry({ data }: { data: Structure }) {
   const tabs: { key: TabKey; label: string; n: number }[] = [
     { key: "diseases", label: "Patologie", n: data.diseases.length },
     { key: "phenotypes", label: "Segni", n: data.phenotypes.length },
+    { key: "readings", label: "Letture", n: data.documents.length },
     { key: "parts", label: "Parti", n: data.children.length },
   ];
   const firstFilled = tabs.find((t) => t.n > 0)?.key ?? "diseases";
@@ -201,6 +202,7 @@ function Entry({ data }: { data: Structure }) {
     ...data.inherited_from.flatMap((l) => l.citations),
     ...data.diseases.flatMap((d) => d.citations),
     ...data.phenotypes.flatMap((p) => p.citations),
+    ...data.documents.map((d) => d.citation),
   ];
 
   return (
@@ -300,6 +302,8 @@ function Entry({ data }: { data: Structure }) {
           </ul>
         )}
 
+        {tab === "readings" && data.documents.length > 0 && <Readings data={data} />}
+
         {tab === "parts" && data.children.length > 0 && (
           <>
             <ul>
@@ -336,6 +340,31 @@ function Entry({ data }: { data: Structure }) {
 
       <CitationList citations={citations} />
     </div>
+  );
+}
+
+/**
+ * Documenti del corpus collegati alla struttura: si aprono alla fonte, ognuno con la sua
+ * licenza, e dicono perché sono qui (trattano la struttura, o una malattia con sede in essa).
+ */
+function Readings({ data }: { data: Structure }) {
+  return (
+    <ul>
+      {data.documents.map((d) => (
+        <li key={d.doc_id} className="border-b border-gauze-200 py-2">
+          <SourceLink cite={d.citation}>
+            <span className="leading-snug">{d.title}</span>
+          </SourceLink>
+          <div className="mt-0.5 flex flex-wrap gap-x-2 text-[0.76rem] text-ink-mute">
+            <span>{sourceName(d.source)}</span>
+            <span aria-hidden="true">·</span>
+            <span>{d.citation.license}</span>
+            <span aria-hidden="true">·</span>
+            <span>{d.link}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -1,0 +1,110 @@
+"""07 — Chunk dei documenti ed embedding locali in sqlite-vec.
+
+1. I documenti senza chunk (nuovi, o con testo cambiato: 05 ne butta i chunk) vengono
+   divisi in chunk (pipeline/lib/chunking.py).
+2. I chunk senza vettore ricevono l'embedding del modello config.EMBED_MODEL, calcolato
+   in locale (GPU se c'è): nessun testo esce dalla macchina (SPEC §4). Il testo passato
+   al modello è "passage: <titolo del documento>. <chunk>", come vuole E5.
+3. I vettori di chunk non più esistenti vengono rimossi.
+
+Riprendibile: salva a lotti; interrotto, riparte dai chunk ancora senza vettore.
+Cambiare modello rifà tutti i vettori.
+
+Prova rapida senza GPU: `--first-chunks 1` indicizza solo il primo chunk di ogni
+documento (l'introduzione di ogni capitolo, ogni definizione): la ricerca funziona ma
+non vede il resto dei testi. Rieseguire senza l'opzione completa l'indice.
+
+Richiede le dipendenze opzionali:  pip install -e ".[embed]"
+Uso:  python -m pipeline.07_embed [--model NOME] [--device cuda|cpu] [--sources a,b]
+"""
+
+import argparse
+import sqlite3
+import sys
+import time
+
+from pipeline.lib import chunking, config, db, vec
+
+BATCH = 256  # chunk per scrittura su disco
+
+
+def make_chunks(conn: sqlite3.Connection, sources: set[str] | None) -> int:
+    rows: list[tuple[str, str, int, str]] = []
+    for doc_id, text in db.documents_without_chunks(conn):
+        if sources and doc_id.split(":", 1)[0] not in sources:
+            continue
+        for i, piece in enumerate(chunking.chunk_text(text, config.CHUNK_CHARS)):
+            rows.append((f"{doc_id}#{i}", doc_id, i, piece))
+    db.insert_chunks(conn, rows)
+    return len(rows)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default=config.EMBED_MODEL)
+    parser.add_argument("--device", default=None, help="cuda | cpu (predefinito: automatico)")
+    parser.add_argument("--sources", default="", help="solo queste fonti, separate da virgola")
+    parser.add_argument("--max-minutes", type=float, default=0, help="fermati dopo N minuti")
+    parser.add_argument(
+        "--first-chunks", type=int, default=0, help="solo i primi N chunk di ogni documento"
+    )
+    args = parser.parse_args()
+    sources = {s for s in args.sources.split(",") if s} or None
+
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError:
+        sys.exit('manca sentence-transformers: pip install -e ".[embed]"')
+
+    model = SentenceTransformer(args.model, device=args.device)
+    # sentence-transformers ≥ 6 ha rinominato il metodo
+    get_dim = (
+        getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
+    )
+    dim = int(get_dim() or 0)
+    print(f"  modello {args.model} ({dim} dimensioni) su {model.device}")
+
+    conn = db.connect(config.DB_PATH)
+    vec.load(conn)
+    with conn:
+        db.migrate(conn)
+        made = make_chunks(conn, sources)
+        if vec.ensure(conn, args.model, dim):
+            print("  modello cambiato: i vettori precedenti sono stati rimossi")
+        removed = vec.delete_orphans(conn)
+    print(f"  chunk nuovi: {made}; vettori orfani rimossi: {removed}")
+
+    started = time.monotonic()
+    done = 0
+    while True:
+        batch = vec.chunks_without_vectors(conn, BATCH * 8, sources, args.first_chunks)
+        if not batch:
+            break
+        for i in range(0, len(batch), BATCH):
+            part = batch[i : i + BATCH]
+            vectors = model.encode(
+                [f"passage: {title}. {text}" for _cid, title, text in part],
+                batch_size=32,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )
+            with conn:
+                vec.insert(
+                    conn,
+                    [(cid, v.tolist()) for (cid, _t, _x), v in zip(part, vectors, strict=True)],
+                )
+            done += len(part)
+        left = vec.missing_count(conn)
+        rate = done / max(time.monotonic() - started, 1e-6)
+        print(f"  {done} vettori ({rate:.1f}/s); ne mancano {left}", flush=True)
+        if args.max_minutes and time.monotonic() - started > args.max_minutes * 60:
+            print("  tempo scaduto: rieseguire per continuare")
+            break
+    total = conn.execute("SELECT COUNT(*) FROM chunk_vec").fetchone()[0]
+    conn.close()
+    print(f"OK: {total} vettori in chunk_vec")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

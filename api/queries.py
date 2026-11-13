@@ -188,3 +188,46 @@ def source_release(conn: sqlite3.Connection, source: str) -> sqlite3.Row | None:
         (source,),
     ).fetchone()
     return row
+
+
+def documents_for_structure(conn: sqlite3.Connection, fma_id: str, limit: int) -> list[sqlite3.Row]:
+    """Documenti collegati da 06, i più pertinenti prima; per i legami tramite malattia
+    anche il nome della malattia (via = MONDO ID)."""
+    return conn.execute(
+        """
+        SELECT d.doc_id, d.source, d.title, d.url, d.license, d.retrieved,
+               ds.basis, ds.relevance, ds.via, x.label AS via_label
+        FROM document_structure ds
+        JOIN document d ON d.doc_id = ds.doc_id
+        LEFT JOIN disease x ON x.mondo_id = ds.via
+        WHERE ds.fma_id = ?
+        ORDER BY ds.relevance DESC, d.source = 'orphanet', d.title
+        LIMIT ?
+        """,
+        (fma_id, limit),
+    ).fetchall()
+
+
+def embedding_model(conn: sqlite3.Connection) -> str | None:
+    """Il modello con cui 07 ha calcolato i vettori (la query va codificata con lo stesso)."""
+    try:
+        row = conn.execute("SELECT model FROM embedding_meta WHERE id = 1").fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return str(row[0]) if row else None
+
+
+def nearest_chunks(conn: sqlite3.Connection, query_vec: bytes, k: int) -> list[sqlite3.Row]:
+    """I k chunk più vicini (distanza coseno) con il documento da citare."""
+    return conn.execute(
+        """
+        WITH hits AS (
+          SELECT chunk_id, distance FROM chunk_vec WHERE embedding MATCH ? AND k = ?
+        )
+        SELECT h.chunk_id, h.distance, c.doc_id, c.text,
+               d.source, d.title, d.url, d.license, d.retrieved
+        FROM hits h JOIN chunk c USING (chunk_id) JOIN document d ON d.doc_id = c.doc_id
+        ORDER BY h.distance
+        """,
+        (query_vec, k),
+    ).fetchall()

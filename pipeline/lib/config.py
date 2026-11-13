@@ -160,3 +160,9 @@ STATPEARLS_TGZ = DOCS / "statpearls_NBK430685.tar.gz"
 STATPEARLS_ACCESSION = "NBK430685"
 # Solo l'FTP ufficiale NCBI (SPEC §3): niente recupero sistematico da altre vie.
 NCBI_LITARCH = "https://ftp.ncbi.nlm.nih.gov/pub/litarch/"
+
+# ─── Embedding (07) ───────────────────────────────────────────────────────────
+# Modello multilingue locale (SPEC §4: nessun testo esce per gli embedding).
+# E5 vuole i prefissi "query: " / "passage: ". Cambiare modello rifà tutti i vettori.
+EMBED_MODEL = "intfloat/multilingual-e5-base"
+CHUNK_CHARS = 1500  # obiettivo per chunk: ~350 token, sotto il limite di 512 di E5

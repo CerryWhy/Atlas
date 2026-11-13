@@ -12,6 +12,7 @@ from api.models import (
     Disease,
     InheritedLink,
     Phenotype,
+    Reading,
     Structure,
     StructureRef,
 )
@@ -72,6 +73,39 @@ def _inherited_link(
         unsided_label=unsided,
         carries_content=bool(link["carries_content"]),
         citations=[relation, target],
+    )
+
+
+READINGS_LIMIT = 40
+
+_LINK_TEXT = {
+    "anatomy_title": "Tratta questa struttura",
+    "mesh_anatomy": "Tratta questa struttura (MeSH)",
+    "disease_site": "Tramite la malattia",
+    "disease_site_part": "Tramite la malattia, in una sua parte",
+}
+
+
+def _reading(r: sqlite3.Row) -> Reading:
+    """Un documento collegato: la citazione è il documento stesso, con la sua licenza;
+    `link` dice perché è collegato (per i legami tramite malattia, quale)."""
+    link = _LINK_TEXT.get(r["basis"], r["basis"])
+    if r["basis"].startswith("disease_site"):
+        link += f": {r['via_label'] or r['via']}"
+    return Reading(
+        doc_id=r["doc_id"],
+        source=r["source"],
+        title=r["title"],
+        basis=r["basis"],
+        relevance=r["relevance"],
+        link=link,
+        citation=Citation(
+            source=r["source"],
+            title=r["title"],
+            url=r["url"],
+            version=r["retrieved"],
+            license=r["license"],
+        ),
     )
 
 
@@ -220,4 +254,7 @@ def get_structure(conn: Conn, fma_id: Annotated[str, Path(pattern=FMA_PATTERN)])
         mesh_nodes=queries.mesh_nodes_under(conn, fma_id),
         diseases=diseases,
         phenotypes=phenotypes,
+        documents=[
+            _reading(r) for r in queries.documents_for_structure(conn, fma_id, READINGS_LIMIT)
+        ],
     )
