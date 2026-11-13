@@ -141,6 +141,83 @@ def test_every_source_has_a_license(conn: sqlite3.Connection) -> None:
     assert scalar(conn, "SELECT COUNT(*) FROM document WHERE trim(license) = ''") == 0
 
 
+def test_exact_links_mirror_structure_uberon_id(conn: sqlite3.Connection) -> None:
+    """`structure.uberon_id` resta il solo xref esatto; `structure_uberon` lo contiene."""
+    exact = conn.execute("SELECT fma_id, uberon_id FROM structure_uberon WHERE basis = 'xref'")
+    on_structure = conn.execute(
+        "SELECT fma_id, uberon_id FROM structure WHERE uberon_id IS NOT NULL"
+    )
+    assert set(exact.fetchall()) == set(on_structure.fetchall())
+
+
+def test_inherited_links_are_sided_variants(conn: sqlite3.Connection) -> None:
+    """Ogni legame ereditato collega "Right/Left X" a "X" (I5: niente analogie libere)."""
+    from pipeline.lib.laterality import unsided_name
+
+    rows = conn.execute(
+        """
+        SELECT s.label_en, su.basis, su.via_label FROM structure_uberon su
+        JOIN structure s USING (fma_id) WHERE su.basis <> 'xref'
+        """
+    ).fetchall()
+    assert rows, "l'ereditarietà destra/sinistra non ha prodotto legami"
+    for label, basis, via_label in rows:
+        if basis == "fma_laterality":
+            assert unsided_name(label) == via_label.strip().lower(), (label, via_label)
+        else:  # uberon_laterality: via_label è il termine UBERON con lato
+            assert unsided_name(via_label) is not None, (label, via_label)
+
+
+def test_uberon_route_does_not_widen_the_structure(conn: sqlite3.Connection) -> None:
+    """Regressione: UBERON usa "left eye" come xref di "Left eyeball"; risalendo is_a si
+    arriverebbe a "eye" (occhio intero, annessi compresi), che non è il bulbo."""
+    eye_on_eyeball = scalar(
+        conn,
+        """
+        SELECT COUNT(*) FROM structure_uberon su JOIN structure s USING (fma_id)
+        WHERE s.label_en IN ('Left eyeball', 'Right eyeball') AND su.uberon_id = 'UBERON:0000970'
+        """,
+    )
+    assert eye_on_eyeball == 0
+    missing_name = scalar(
+        conn,
+        "SELECT COUNT(*) FROM structure_uberon WHERE basis <> 'xref' AND unsided_label IS NULL",
+    )
+    assert missing_name == 0
+
+
+def test_every_disease_site_has_a_source(conn: sqlite3.Connection) -> None:
+    """I2: per ogni legame malattia → sede si sa chi lo asserisce (MONDO o Disease Ontology)."""
+    assert scalar(conn, "SELECT COUNT(*) FROM disease_structure WHERE source IS NULL") == 0
+    bad = scalar(
+        conn,
+        """
+        SELECT COUNT(*) FROM disease_structure
+        WHERE NOT ((source = 'mondo' AND source_id = mondo_id)
+                OR (source = 'doid' AND source_id LIKE 'DOID:%'))
+        """,
+    )
+    assert bad == 0
+
+
+def test_laterality_reaches_the_limbs(conn: sqlite3.Connection) -> None:
+    """La ragione dell'ereditarietà: gli arti avevano quasi solo strutture con lato."""
+    # prima dell'ereditarietà: 2 strutture con patologie o segni negli arti superiori
+    with_content = scalar(
+        conn,
+        """
+        WITH clin AS (
+          SELECT uberon_id FROM disease_structure UNION SELECT uberon_id FROM phenotype_structure
+        )
+        SELECT COUNT(DISTINCT s.fma_id) FROM structure s
+        JOIN structure_uberon su ON su.fma_id = s.fma_id
+        JOIN clin ON clin.uberon_id = su.uberon_id
+        WHERE s.region = 'upper_limb'
+        """,
+    )
+    assert with_content >= 50
+
+
 def test_clinical_graph_is_populated(conn: sqlite3.Connection) -> None:
     assert scalar(conn, "SELECT COUNT(*) FROM phenotype") > 10_000
     assert scalar(conn, "SELECT COUNT(*) FROM disease") > 20_000

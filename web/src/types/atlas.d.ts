@@ -111,6 +111,8 @@ export interface components {
             label: string;
             /** Icd11 Code */
             icd11_code: string | null;
+            /** Inherited */
+            inherited: boolean;
             /** Citations */
             citations: components["schemas"]["Citation"][];
         };
@@ -118,6 +120,22 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * InheritedLink
+         * @description Legame clinico preso dalla versione senza lato della struttura.
+         */
+        InheritedLink: {
+            /** Uberon Id */
+            uberon_id: string;
+            /** Basis */
+            basis: string;
+            /** Unsided Label */
+            unsided_label: string;
+            /** Carries Content */
+            carries_content: boolean;
+            /** Citations */
+            citations: components["schemas"]["Citation"][];
         };
         /** MeshFile */
         MeshFile: {
@@ -156,6 +174,8 @@ export interface components {
             hpo_id: string;
             /** Label */
             label: string;
+            /** Inherited */
+            inherited: boolean;
             /** Citations */
             citations: components["schemas"]["Citation"][];
         };
@@ -208,6 +228,8 @@ export interface components {
             radius: number | null;
             /** Citations */
             citations: components["schemas"]["Citation"][];
+            /** Inherited From */
+            inherited_from: components["schemas"]["InheritedLink"][];
             /** Ancestors */
             ancestors: components["schemas"]["StructureRef"][];
             /** Children */

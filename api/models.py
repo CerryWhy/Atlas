@@ -21,12 +21,26 @@ class Disease(BaseModel):
     mondo_id: str = Field(pattern=MONDO_PATTERN)
     label: str
     icd11_code: str | None
+    # True se la malattia arriva solo dalla versione senza lato della struttura
+    inherited: bool
     citations: list[Citation] = Field(min_length=1)
 
 
 class Phenotype(BaseModel):
     hpo_id: str = Field(pattern=HPO_PATTERN)
     label: str
+    inherited: bool
+    citations: list[Citation] = Field(min_length=1)
+
+
+class InheritedLink(BaseModel):
+    """Legame clinico preso dalla versione senza lato della struttura."""
+
+    uberon_id: str
+    basis: str  # 'fma_laterality' | 'uberon_laterality'
+    unsided_label: str
+    # False se il termine senza lato non porta né malattie né segni
+    carries_content: bool
     citations: list[Citation] = Field(min_length=1)
 
 
@@ -57,6 +71,7 @@ class Structure(BaseModel):
     centroid: tuple[float, float, float] | None
     radius: float | None
     citations: list[Citation]
+    inherited_from: list[InheritedLink]
     ancestors: list[StructureRef]
     children: list[ChildRef]
     mesh_nodes: list[str]

@@ -17,6 +17,7 @@ class Term:
     xrefs: list[str] = field(default_factory=list)
     # sottoinsieme di xrefs che MONDO marca come equivalenza esatta (MONDO:equivalentTo)
     equivalent_xrefs: list[str] = field(default_factory=list)
+    is_a: list[str] = field(default_factory=list)
     # (relazione, target) da righe `relationship:` e `intersection_of:` con relazione
     relations: list[tuple[str, str]] = field(default_factory=list)
 
@@ -55,6 +56,8 @@ def iter_terms(path: Path) -> Iterator[Term]:
                 term.xrefs.append(xref)
                 if 'source="MONDO:equivalentTo"' in value:
                     term.equivalent_xrefs.append(xref)
+            elif tag == "is_a":
+                term.is_a.append(_strip_comment(value).split(" ", 1)[0])
             elif tag in ("relationship", "intersection_of"):
                 parts = _strip_comment(value).split()
                 if len(parts) == 2:

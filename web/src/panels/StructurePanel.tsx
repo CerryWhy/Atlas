@@ -139,6 +139,45 @@ function ViewActions() {
   );
 }
 
+const isMixed = (items: { inherited: boolean }[]): boolean =>
+  items.some((i) => i.inherited) && items.some((i) => !i.inherited);
+
+function UnsidedTag() {
+  return (
+    <span className="ml-1.5 whitespace-nowrap text-[0.75rem] text-ink-mute">senza lato</span>
+  );
+}
+
+/**
+ * Patologie e segni presi dalla versione senza lato (es. "Right humerus" → "Humerus").
+ * Le fonti cliniche raramente distinguono destra e sinistra: lo diciamo, con la fonte
+ * che dichiara la relazione, invece di presentarli come specifici di questo lato.
+ */
+function InheritanceNote({ data }: { data: Structure }) {
+  const inheritedItems = [...data.diseases, ...data.phenotypes].filter((i) => i.inherited);
+  // solo i legami che portano davvero voci: gli altri non spiegano nulla di ciò che si vede
+  const links = data.inherited_from.filter((l) => l.carries_content);
+  if (inheritedItems.length === 0 || links.length === 0) return null;
+  const all = inheritedItems.length === data.diseases.length + data.phenotypes.length;
+  return (
+    <p className="mt-4 border-l-2 border-iodine-600 pl-3 text-[0.88rem] text-ink-soft">
+      Le fonti cliniche descrivono{" "}
+      {links.map((l, i) => (
+        <span key={l.uberon_id}>
+          {i > 0 && (i === links.length - 1 ? " e " : ", ")}
+          <SourceLink cite={l.citations[0]}>
+            <span className="font-serif italic">{l.unsided_label}</span>
+          </SourceLink>
+        </span>
+      ))}{" "}
+      senza distinguere il lato.{" "}
+      {all
+        ? "Le voci qui sotto valgono per la struttura in generale, non specificamente per questo lato."
+        : "Le voci segnate «senza lato» valgono per la struttura in generale, non specificamente per questo lato."}
+    </p>
+  );
+}
+
 function Entry({ data }: { data: Structure }) {
   const select = useAtlasStore((s) => s.select);
   const tabs: { key: TabKey; label: string; n: number }[] = [
@@ -150,9 +189,16 @@ function Entry({ data }: { data: Structure }) {
   const [picked, setPicked] = useState<TabKey | null>(null);
   const tab = picked && tabs.some((t) => t.key === picked && t.n > 0) ? picked : firstFilled;
   const nothing = tabs.every((t) => t.n === 0);
+  // Il segno "senza lato" serve solo se una lista mescola voci proprie ed ereditate;
+  // quando sono tutte ereditate lo dice già la nota in alto.
+  const mixed = {
+    diseases: isMixed(data.diseases),
+    phenotypes: isMixed(data.phenotypes),
+  };
 
   const citations = [
     ...data.citations,
+    ...data.inherited_from.flatMap((l) => l.citations),
     ...data.diseases.flatMap((d) => d.citations),
     ...data.phenotypes.flatMap((p) => p.citations),
   ];
@@ -165,10 +211,12 @@ function Entry({ data }: { data: Structure }) {
       </div>
       <ViewActions />
 
+      <InheritanceNote data={data} />
+
       {data.diseases.length + data.phenotypes.length === 0 && (
         <p className="mt-4 border-l-2 border-gauze-300 pl-3 text-[0.88rem] text-ink-soft">
-          {data.uberon_id
-            ? "Le fonti caricate non collegano patologie o segni direttamente a questa struttura: di solito li registrano sull'organo senza lato o su una struttura più ampia."
+          {data.uberon_id || data.inherited_from.length > 0
+            ? "Le fonti caricate non collegano patologie o segni a questa struttura, né alla sua versione senza lato: di solito li registrano su una struttura più ampia."
             : "Questa struttura non ha un collegamento alle ontologie cliniche."}{" "}
           {data.ancestors.length > 0 && "Risali la gerarchia qui sopra per trovarli."}
         </p>
@@ -208,7 +256,10 @@ function Entry({ data }: { data: Structure }) {
                   className="flex items-baseline justify-between gap-3 border-b border-gauze-200 py-2"
                 >
                   <div className="min-w-0">
-                    <div className="leading-snug">{d.label}</div>
+                    <div className="leading-snug">
+                      {d.label}
+                      {mixed.diseases && d.inherited && <UnsidedTag />}
+                    </div>
                     <div className="tnum text-[0.78rem] text-ink-mute">
                       <SourceLink cite={mondo}>{spellId(d.mondo_id)}</SourceLink>
                     </div>
@@ -237,7 +288,10 @@ function Entry({ data }: { data: Structure }) {
                 key={p.hpo_id}
                 className="flex items-baseline justify-between gap-3 border-b border-gauze-200 py-1.5"
               >
-                <span className="leading-snug">{p.label}</span>
+                <span className="leading-snug">
+                  {p.label}
+                  {mixed.phenotypes && p.inherited && <UnsidedTag />}
+                </span>
                 <span className="tnum shrink-0 text-[0.78rem] text-ink-mute">
                   <SourceLink cite={p.citations[0]}>{spellId(p.hpo_id)}</SourceLink>
                 </span>

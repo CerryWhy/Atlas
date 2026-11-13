@@ -50,6 +50,38 @@ def test_region_nodes_resolve_to_a_focus_structure() -> None:
             assert client.get(f"/structure/{n['focus_fma_id']}").status_code == 200
 
 
+def test_sided_structure_inherits_and_says_so() -> None:
+    """Right humerus non ha un termine UBERON proprio: eredita da Humerus, dichiarandolo."""
+    body = client.get("/structure/FMA:23130").json()
+    assert body["label_en"] == "Right humerus"
+    assert body["uberon_id"] is None, "uberon_id resta solo l'xref esatto"
+    assert body["inherited_from"], "deve dichiarare da dove eredita"
+    link = body["inherited_from"][0]
+    assert link["unsided_label"] == "Humerus"
+    assert {c["source"] for c in link["citations"]} >= {"fma", "uberon"}
+    items = [*body["diseases"], *body["phenotypes"]]
+    assert items and all(i["inherited"] for i in items)
+    # I2: ogni voce ereditata cita chi asserisce la sede E la relazione di lato
+    for item in items:
+        sources = [c["source"] for c in item["citations"]]
+        assert sources[0] in {"mondo", "doid", "hpo"}
+        assert any(c["title"].startswith("FMA: Right humerus") for c in item["citations"])
+
+
+def test_note_cites_the_link_that_carries_content() -> None:
+    """Right kidney eredita due termini: solo "kidney" porta malattie e segni."""
+    body = client.get("/structure/FMA:7204").json()
+    carrying = [link for link in body["inherited_from"] if link["carries_content"]]
+    assert [link["unsided_label"] for link in carrying] == ["kidney"]
+    assert all(not link["unsided_label"].startswith("UBERON:") for link in body["inherited_from"])
+
+
+def test_exact_content_is_not_marked_inherited() -> None:
+    body = client.get("/structure/FMA:7197").json()  # fegato: legame esatto
+    assert body["inherited_from"] == []
+    assert body["diseases"] and not any(d["inherited"] for d in body["diseases"])
+
+
 def test_free_text_ids_are_rejected() -> None:
     assert client.get("/structure/liver").status_code == 422
     assert client.get("/regions/ATLAS.DB/nodes").status_code == 422

@@ -28,6 +28,24 @@ CREATE INDEX IF NOT EXISTS idx_structure_parent ON structure(parent_fma_id);
 CREATE INDEX IF NOT EXISTS idx_structure_uberon ON structure(uberon_id);
 CREATE INDEX IF NOT EXISTS idx_structure_region ON structure(region);
 
+-- Estensione allo schema di SPEC §6: i legami struttura → UBERON con la loro
+-- provenienza. `structure.uberon_id` resta solo il crosswalk esatto; qui ci sono anche
+-- i legami ereditati dalla versione senza lato (vedi pipeline/lib/laterality.py).
+--   basis = 'xref'              xref FMA esatto sul termine UBERON (= structure.uberon_id)
+--   basis = 'fma_laterality'    via = classe FMA senza lato di cui la struttura è sottoclasse
+--   basis = 'uberon_laterality' via = termine UBERON con lato (structure.uberon_id)
+CREATE TABLE IF NOT EXISTS structure_uberon (
+  fma_id    TEXT NOT NULL REFERENCES structure(fma_id),
+  uberon_id TEXT NOT NULL,
+  basis     TEXT NOT NULL CHECK (basis IN ('xref', 'fma_laterality', 'uberon_laterality')),
+  via_id    TEXT,
+  via_label TEXT,
+  unsided_label TEXT,           -- nome della struttura senza lato (FMA o UBERON)
+  PRIMARY KEY (fma_id, uberon_id),
+  CHECK ((basis = 'xref') = (via_id IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_structure_uberon_uberon ON structure_uberon(uberon_id);
+
 CREATE TABLE IF NOT EXISTS phenotype (
   hpo_id     TEXT PRIMARY KEY,
   label      TEXT NOT NULL,
@@ -56,9 +74,13 @@ CREATE TABLE IF NOT EXISTS disease_phenotype (
   PRIMARY KEY (mondo_id, hpo_id)
 );
 
+-- source/source_id: chi asserisce la sede (I2). 'mondo' = assioma sul termine MONDO;
+-- 'doid' = assioma RO:0004026 sul termine Disease Ontology source_id.
 CREATE TABLE IF NOT EXISTS disease_structure (
   mondo_id  TEXT NOT NULL REFERENCES disease(mondo_id),
   uberon_id TEXT NOT NULL,
+  source    TEXT,
+  source_id TEXT,
   PRIMARY KEY (mondo_id, uberon_id)
 );
 
@@ -122,8 +144,21 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+# Colonne aggiunte dopo la prima versione dello schema: un database già esistente le
+# riceve con ALTER TABLE (CREATE TABLE IF NOT EXISTS non tocca le tabelle presenti).
+_ADDED_COLUMNS = {
+    "structure_uberon": [("unsided_label", "TEXT")],
+    "disease_structure": [("source", "TEXT"), ("source_id", "TEXT")],
+}
+
+
 def migrate(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for table, columns in _ADDED_COLUMNS.items():
+        present = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, sqltype in columns:
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {sqltype}")
 
 
 Rows = Iterable[tuple[object, ...]]
@@ -151,6 +186,46 @@ def upsert_structures(conn: sqlite3.Connection, rows: Iterable[dict[str, object]
 def set_uberon_ids(conn: sqlite3.Connection, pairs: Iterable[tuple[str | None, str]]) -> None:
     """pairs = (uberon_id | None, fma_id)."""
     conn.executemany("UPDATE structure SET uberon_id = ? WHERE fma_id = ?", pairs)
+
+
+def replace_structure_uberon(conn: sqlite3.Connection, rows: Rows) -> None:
+    """rows = (fma_id, uberon_id, basis, via_id, via_label, unsided_label)."""
+    conn.execute("DELETE FROM structure_uberon")
+    conn.executemany(
+        """
+        INSERT INTO structure_uberon (fma_id, uberon_id, basis, via_id, via_label, unsided_label)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+
+def clinical_uberon_ids(conn: sqlite3.Connection) -> set[str]:
+    """Termini UBERON che hanno almeno una malattia o un fenotipo collegato."""
+    rows = conn.execute(
+        "SELECT uberon_id FROM disease_structure UNION SELECT uberon_id FROM phenotype_structure"
+    ).fetchall()
+    return {r[0] for r in rows}
+
+
+def region_clinical_coverage(conn: sqlite3.Connection, region: str) -> tuple[int, int]:
+    """(strutture con contenuto clinico per legame esatto, per legame esatto o ereditato)."""
+    row = conn.execute(
+        """
+        WITH clin AS (
+          SELECT uberon_id FROM disease_structure UNION SELECT uberon_id FROM phenotype_structure
+        )
+        SELECT
+          COUNT(DISTINCT CASE WHEN su.basis = 'xref' THEN s.fma_id END),
+          COUNT(DISTINCT su.fma_id)
+        FROM structure s
+        JOIN structure_uberon su ON su.fma_id = s.fma_id
+        JOIN clin ON clin.uberon_id = su.uberon_id
+        WHERE s.region = ?
+        """,
+        (region,),
+    ).fetchone()
+    return int(row[0]), int(row[1])
 
 
 def structure_ids(conn: sqlite3.Connection) -> list[tuple[str, str, str | None]]:
@@ -187,9 +262,14 @@ def replace_phenotype_structure(conn: sqlite3.Connection, rows: Rows) -> None:
 
 
 def replace_disease_structure(conn: sqlite3.Connection, rows: Rows) -> None:
+    """rows = (mondo_id, uberon_id, source, source_id); a parità di coppia vince la prima."""
     conn.execute("DELETE FROM disease_structure")
     conn.executemany(
-        "INSERT OR IGNORE INTO disease_structure (mondo_id, uberon_id) VALUES (?, ?)", rows
+        """
+        INSERT OR IGNORE INTO disease_structure (mondo_id, uberon_id, source, source_id)
+        VALUES (?, ?, ?, ?)
+        """,
+        rows,
     )
 
 

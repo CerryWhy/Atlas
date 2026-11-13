@@ -100,6 +100,29 @@ def read_fma(path: Path, wanted: set[str]) -> tuple[dict[str, FmaClass], str, di
     return out, version, graph
 
 
+def read_fma_taxonomy(path: Path) -> tuple[dict[str, str], dict[str, set[str]]]:
+    """Per tutte le classi FMA: nome (preferred_name, altrimenti rdfs:label) e
+    superclassi nominate dichiarate con `rdfs:subClassOf` (non le restrizioni)."""
+    names: dict[str, str] = {}
+    supers: dict[str, set[str]] = {}
+    for elem in _top_level(path):
+        if elem.tag != OWL + "Class":
+            continue
+        fma_id = _fma_curie(elem.get(RDF + "about"))
+        if fma_id is None:
+            continue
+        name = elem.findtext(FMA + "preferred_name") or elem.findtext(RDFS + "label") or ""
+        names[fma_id] = name.strip()
+        parents = {
+            p
+            for s in elem.findall(RDFS + "subClassOf")
+            if (p := _fma_curie(s.get(RDF + "resource"))) is not None
+        }
+        if parents:
+            supers[fma_id] = parents
+    return names, supers
+
+
 def nearest_whole(start: str, graph: dict[str, set[str]], targets: set[str]) -> str | None:
     """Il "tutto" più vicino tra `targets`, risalendo part_of in ampiezza (BFS).
     A parità di distanza vince l'ID più basso, per avere un risultato stabile."""

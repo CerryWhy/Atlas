@@ -10,6 +10,7 @@ from api.models import (
     ChildRef,
     Citation,
     Disease,
+    InheritedLink,
     Phenotype,
     Structure,
     StructureRef,
@@ -33,47 +34,128 @@ def _obo_purl(curie: str) -> str:
     return "http://purl.obolibrary.org/obo/" + curie.replace(":", "_")
 
 
+def _fma_url(fma_id: str) -> str:
+    return "http://purl.org/sig/ont/fma/fma" + fma_id.removeprefix("FMA:")
+
+
+def _inherited_link(
+    conn: sqlite3.Connection, label: str, fma_id: str, link: sqlite3.Row
+) -> InheritedLink:
+    """Un legame ereditato porta due fonti: chi dichiara la sottoclasse (con lato ⊑ senza
+    lato) e il termine UBERON senza lato a cui le fonti cliniche si agganciano."""
+    unsided = str(link["unsided_label"] or link["uberon_id"])
+    if link["basis"] == "fma_laterality":
+        relation = _release_citation(
+            conn, "fma", _fma_url(fma_id), f"FMA: {label} è sottoclasse di {unsided}"
+        )
+    else:
+        relation = _release_citation(
+            conn,
+            "uberon",
+            _obo_purl(link["via_id"]),
+            f"UBERON: {link['via_label']} is_a {unsided}",
+        )
+    target = _release_citation(
+        conn, "uberon", _obo_purl(link["uberon_id"]), f"UBERON: {unsided} ({link['uberon_id']})"
+    )
+    return InheritedLink(
+        uberon_id=link["uberon_id"],
+        basis=link["basis"],
+        unsided_label=unsided,
+        carries_content=bool(link["carries_content"]),
+        citations=[relation, target],
+    )
+
+
+def _site_citation(conn: sqlite3.Connection, d: sqlite3.Row) -> Citation:
+    """La fonte che asserisce la sede della malattia (I2): l'assioma MONDO o quello DO."""
+    if d["site_source"] == "doid" and d["site_source_id"]:
+        return _release_citation(
+            conn,
+            "doid",
+            _obo_purl(d["site_source_id"]),
+            f"Disease Ontology: {d['site_source_id']} ha sede in {d['uberon_id']}",
+        )
+    return _release_citation(
+        conn,
+        "mondo",
+        _obo_purl(d["mondo_id"]),
+        f"MONDO: {d['label']} ha sede in {d['uberon_id']}",
+    )
+
+
 @router.get("/structure/{fma_id}", response_model=Structure)
 def get_structure(conn: Conn, fma_id: Annotated[str, Path(pattern=FMA_PATTERN)]) -> Structure:
     row = queries.get_structure(conn, fma_id)
     if row is None:
         raise HTTPException(404, f"{fma_id} non presente in atlas.db")
 
+    links = {
+        link["uberon_id"]: _inherited_link(conn, row["label_en"], fma_id, link)
+        for link in queries.inherited_links(conn, fma_id)
+    }
+
+    def via(uberon_id: str, basis: str) -> list[Citation]:
+        """Per una voce ereditata: la relazione con lato ⊑ senza lato che la porta qui."""
+        return [] if basis == "xref" else links[uberon_id].citations[:1]
+
     icd = queries.source_release(conn, "icd11")
-    diseases = []
+    diseases: list[Disease] = []
+    seen: set[str] = set()
     for d in queries.diseases_for_structure(conn, fma_id):
-        cites = [_release_citation(conn, "mondo", _obo_purl(d["mondo_id"]), f"MONDO: {d['label']}")]
+        if d["mondo_id"] in seen:  # righe ordinate: il primo percorso è il migliore
+            continue
+        seen.add(d["mondo_id"])
+        cites = [_site_citation(conn, d)]
+        if d["site_source"] == "doid":
+            cites.append(
+                _release_citation(conn, "mondo", _obo_purl(d["mondo_id"]), f"MONDO: {d['label']}")
+            )
         if d["icd11_code"] and icd is not None:
             cites.append(
                 _release_citation(
                     conn, "icd11", icd["url"], f"ICD-11 MMS {icd['version']}: {d['icd11_code']}"
                 )
             )
+        cites += via(d["uberon_id"], d["basis"])
         diseases.append(
             Disease(
                 mondo_id=d["mondo_id"],
                 label=d["label"],
                 icd11_code=d["icd11_code"],
+                inherited=d["basis"] != "xref",
                 citations=cites,
             )
         )
 
-    phenotypes = [
-        Phenotype(
-            hpo_id=p["hpo_id"],
-            label=p["label"],
-            citations=[
-                _release_citation(conn, "hpo", _obo_purl(p["hpo_id"]), f"HPO: {p['label']}")
-            ],
+    phenotypes: list[Phenotype] = []
+    seen = set()
+    for p in queries.phenotypes_for_structure(conn, fma_id):
+        if p["hpo_id"] in seen:
+            continue
+        seen.add(p["hpo_id"])
+        phenotypes.append(
+            Phenotype(
+                hpo_id=p["hpo_id"],
+                label=p["label"],
+                inherited=p["basis"] != "xref",
+                citations=[
+                    _release_citation(
+                        conn,
+                        "hpo",
+                        _obo_purl(p["hpo_id"]),
+                        f"HPO: {p['label']} ha sede in {p['uberon_id']}",
+                    ),
+                    *via(p["uberon_id"], p["basis"]),
+                ],
+            )
         )
-        for p in queries.phenotypes_for_structure(conn, fma_id)
-    ]
 
     citations = [
         _release_citation(
             conn,
             "fma",
-            "http://purl.org/sig/ont/fma/fma" + fma_id.removeprefix("FMA:"),
+            _fma_url(fma_id),
             f"FMA: {row['label_en']}",
         )
     ]
@@ -107,6 +189,7 @@ def get_structure(conn: Conn, fma_id: Annotated[str, Path(pattern=FMA_PATTERN)])
         centroid=(row["cx"], row["cy"], row["cz"]) if has_centroid else None,
         radius=row["radius"],
         citations=citations,
+        inherited_from=list(links.values()),
         ancestors=[StructureRef(**dict(a)) for a in queries.ancestors(conn, fma_id)],
         children=[
             ChildRef(

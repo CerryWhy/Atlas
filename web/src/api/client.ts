@@ -7,6 +7,7 @@ export type SourceRelease = Schemas["SourceRelease"];
 export type MeshFile = Schemas["MeshFile"];
 export type Disease = Schemas["Disease"];
 export type Phenotype = Schemas["Phenotype"];
+export type InheritedLink = Schemas["InheritedLink"];
 export type StructureRef = Omit<Schemas["StructureRef"], "fma_id"> & { fma_id: FmaId };
 export type ChildRef = Omit<Schemas["ChildRef"], "fma_id"> & { fma_id: FmaId };
 export type MeshNode = Omit<Schemas["MeshNode"], "fma_id" | "focus_fma_id"> & {

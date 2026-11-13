@@ -50,6 +50,16 @@ scaricati finisce in `unmapped` (invariante I5). **Dopo ogni esecuzione vanno le
   una non richiede modifiche all'applicazione.
 - **Un nodo sta in un solo GLB.** Un concetto i cui elementi cadono in due regioni va
   nella regione della maggioranza: ogni FMA ID compare in un solo file.
+- **Ereditarietà destra/sinistra.** Le fonti cliniche parlano di "omero", non di
+  "omero destro". Una struttura con lato eredita i legami UBERON della versione senza
+  lato solo se la fonte dichiara la sottoclasse (FMA `subClassOf`, UBERON `is_a`) e i
+  nomi coincidono a meno del lato (`pipeline/lib/laterality.py`). I legami stanno in
+  `structure_uberon` con la loro provenienza; `structure.uberon_id` resta il solo xref
+  esatto. La scheda lo dichiara e cita la relazione. Effetto sulle strutture con almeno
+  una patologia o un segno: arti superiori 2 → 63, arti inferiori 3 → 57, testa
+  43 → 123, torace 35 → 57, addome 52 → 66.
+- **Fonte della sede.** `disease_structure.source` dice chi asserisce che una malattia
+  ha sede in una struttura (MONDO o Disease Ontology); la scheda cita quella fonte.
 - **Apparato (`system`).** Dall'albero di BodyParts3D quando lo dichiara; altrimenti
   risalendo il `part_of` di FMA (es. cuore, cervelletto, che BodyParts3D colloca sotto
   "torace" e "testa").
@@ -64,8 +74,9 @@ scaricati finisce in `unmapped` (invariante I5). **Dopo ogni esecuzione vanno le
 - **Nomi latini e italiani** vengono dagli equivalenti di FMA con lingua dichiarata.
   L'italiano è quasi assente nella fonte: l'interfaccia mostra il nome inglese
   quando manca, non una traduzione fatta a mano.
-- **Estensioni allo schema di SPEC §6:** tabella `source_release` (versione e licenza
-  di ogni fonte) e tre indici sulle tabelle di relazione.
+- **Estensioni allo schema di SPEC §6:** tabelle `source_release` (versione e licenza
+  di ogni fonte) e `structure_uberon` (legami con provenienza), colonne
+  `disease_structure.source/source_id`, indici sulle tabelle di relazione.
 
 ## Sviluppo
 

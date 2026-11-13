@@ -205,7 +205,10 @@ def load_disease_structure(
     by_xref: dict[str, list[str]],
     mondo_ids: set[str],
 ) -> None:
-    links = set(mondo_links)
+    # (malattia, sede) → chi lo asserisce: serve a citare la sede (I2). MONDO prima, poi DO.
+    links: dict[tuple[str, str], tuple[str, str]] = {
+        pair: ("mondo", pair[0]) for pair in sorted(mondo_links)
+    }
     unmapped: list[tuple[object, ...]] = []
     from_do = 0
     for doid, target in owl.read_restrictions(config.DOID_OWL, DO_HAS_LOCATION, "DOID"):
@@ -215,9 +218,13 @@ def load_disease_structure(
         if len(targets) != 1:
             unmapped.append(("doid_no_mondo", doid, None, f"{len(targets)} equivalenti MONDO"))
             continue
-        from_do += (targets[0], target) not in links
-        links.add((targets[0], target))
-    db.replace_disease_structure(conn, sorted(links))
+        pair = (targets[0], target)
+        if pair not in links:
+            from_do += 1
+            links[pair] = ("doid", doid)
+    db.replace_disease_structure(
+        conn, [(m, u, src, src_id) for (m, u), (src, src_id) in sorted(links.items())]
+    )
     db.replace_unmapped(conn, ["doid_no_mondo"], sorted(set(unmapped), key=str))
     print(
         f"  disease_structure: {len(links)} legami "

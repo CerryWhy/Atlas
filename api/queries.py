@@ -16,30 +16,50 @@ def get_structure(conn: sqlite3.Connection, fma_id: str) -> sqlite3.Row | None:
 
 
 def diseases_for_structure(conn: sqlite3.Connection, fma_id: str) -> list[sqlite3.Row]:
-    """Malattie con sede anatomica = la struttura, via il ponte UBERON."""
+    """Malattie con sede nella struttura, una riga per percorso: legame UBERON usato
+    (esatto o ereditato dalla versione senza lato) e fonte che asserisce la sede
+    (`site_source` 'mondo' | 'doid', `site_source_id`). Le righe di un percorso esatto
+    vengono prima."""
     return conn.execute(
         """
-        SELECT d.mondo_id, d.label, d.icd11_code, d.definition
-        FROM structure s
-        JOIN disease_structure ds ON ds.uberon_id = s.uberon_id
+        SELECT d.mondo_id, d.label, d.icd11_code, su.basis, su.uberon_id,
+               ds.source AS site_source, ds.source_id AS site_source_id
+        FROM structure_uberon su
+        JOIN disease_structure ds ON ds.uberon_id = su.uberon_id
         JOIN disease d ON d.mondo_id = ds.mondo_id
-        WHERE s.fma_id = ?
-        ORDER BY d.icd11_code IS NULL, d.label
+        WHERE su.fma_id = ?
+        ORDER BY d.icd11_code IS NULL, d.label, d.mondo_id, su.basis <> 'xref', su.uberon_id
         """,
         (fma_id,),
     ).fetchall()
 
 
 def phenotypes_for_structure(conn: sqlite3.Connection, fma_id: str) -> list[sqlite3.Row]:
-    """Fenotipi HPO la cui definizione logica ha sede nella struttura (ponte UBERON)."""
+    """Fenotipi HPO la cui definizione logica ha sede nella struttura, una riga per
+    percorso (legame esatto prima)."""
     return conn.execute(
         """
-        SELECT p.hpo_id, p.label
-        FROM structure s
-        JOIN phenotype_structure ps ON ps.uberon_id = s.uberon_id
+        SELECT p.hpo_id, p.label, su.basis, su.uberon_id
+        FROM structure_uberon su
+        JOIN phenotype_structure ps ON ps.uberon_id = su.uberon_id
         JOIN phenotype p ON p.hpo_id = ps.hpo_id
-        WHERE s.fma_id = ?
-        ORDER BY p.label
+        WHERE su.fma_id = ?
+        ORDER BY p.label, p.hpo_id, su.basis <> 'xref', su.uberon_id
+        """,
+        (fma_id,),
+    ).fetchall()
+
+
+def inherited_links(conn: sqlite3.Connection, fma_id: str) -> list[sqlite3.Row]:
+    """Legami UBERON ereditati dalla versione senza lato, con la loro provenienza."""
+    return conn.execute(
+        """
+        SELECT su.uberon_id, su.basis, su.via_id, su.via_label, su.unsided_label,
+               EXISTS (SELECT 1 FROM disease_structure ds WHERE ds.uberon_id = su.uberon_id)
+               OR EXISTS (SELECT 1 FROM phenotype_structure ps WHERE ps.uberon_id = su.uberon_id)
+                 AS carries_content
+        FROM structure_uberon su
+        WHERE su.fma_id = ? AND su.basis <> 'xref' ORDER BY su.uberon_id
         """,
         (fma_id,),
     ).fetchall()
@@ -66,8 +86,10 @@ def ancestors(conn: sqlite3.Connection, fma_id: str) -> list[sqlite3.Row]:
 def children(conn: sqlite3.Connection, fma_id: str) -> list[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT fma_id, label_en, label_it, uberon_id IS NOT NULL AS has_uberon
-        FROM structure WHERE parent_fma_id = ? ORDER BY label_en
+        SELECT s.fma_id, s.label_en, s.label_it,
+               EXISTS (SELECT 1 FROM structure_uberon su WHERE su.fma_id = s.fma_id)
+                 AS has_uberon
+        FROM structure s WHERE s.parent_fma_id = ? ORDER BY s.label_en
         """,
         (fma_id,),
     ).fetchall()
@@ -97,7 +119,8 @@ def mesh_nodes_under(conn: sqlite3.Connection, fma_id: str) -> list[str]:
 
 def mesh_nodes(conn: sqlite3.Connection, mesh_file: str) -> list[sqlite3.Row]:
     """Ogni nodo di un GLB con la sua struttura 'di fuoco': la più vicina, risalendo
-    part_of, che abbia un uberon_id (cioè sapere clinico collegato); altrimenti sé stessa.
+    part_of, che abbia un legame UBERON (esatto o ereditato dalla versione senza lato);
+    altrimenti sé stessa.
     Non si risale fino ai sistemi (depth < 3): sarebbe un fuoco troppo largo per un click."""
     return conn.execute(
         """
@@ -106,12 +129,15 @@ def mesh_nodes(conn: sqlite3.Connection, mesh_file: str) -> list[sqlite3.Row]:
           UNION ALL
           SELECT u.node, s.parent_fma_id, u.hops + 1
           FROM up u JOIN structure s ON s.fma_id = u.fma_id
-          WHERE s.uberon_id IS NULL AND s.parent_fma_id IS NOT NULL
+          WHERE s.parent_fma_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM structure_uberon su WHERE su.fma_id = s.fma_id)
         ),
         nearest AS (
           SELECT u.node, u.fma_id, MAX(u.hops) AS hops
           FROM up u JOIN structure s ON s.fma_id = u.fma_id
-          WHERE s.uberon_id IS NOT NULL AND s.depth >= 3 GROUP BY u.node
+          WHERE s.depth >= 3
+            AND EXISTS (SELECT 1 FROM structure_uberon su WHERE su.fma_id = s.fma_id)
+          GROUP BY u.node
         )
         SELECT n.fma_id, n.label_en, n.label_la, n.label_it, n.system,
                f.fma_id AS focus_fma_id, f.label_en AS focus_label_en,
