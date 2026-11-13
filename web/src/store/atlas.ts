@@ -24,11 +24,14 @@ type AtlasState = {
   hovered: FmaId | null;
   hoveredFocus: FmaId | null;
   modes: Record<GroupKey, Mode>;
+  /** "Mostra solo questo": tutto ciò che non è acceso dalla selezione sparisce. */
+  isolated: boolean;
 
   setScene: (regions: MeshFile[], nodes: MeshNode[]) => void;
   select: (id: FmaId | null) => void;
   hover: (node: FmaId | null) => void;
   cycleMode: (group: GroupKey) => void;
+  toggleIsolated: () => void;
 };
 
 const EMPTY: ReadonlySet<FmaId> = new Set();
@@ -43,6 +46,7 @@ export const useAtlasStore = create<AtlasState>()((set, get) => ({
   hovered: null,
   hoveredFocus: null,
   modes: defaultModes(),
+  isolated: false,
 
   setScene: (regions, nodes) =>
     set({
@@ -56,7 +60,7 @@ export const useAtlasStore = create<AtlasState>()((set, get) => ({
     inflight?.abort();
     inflight = null;
     if (id === null) {
-      set({ selected: null, detail: { state: "idle" }, lit: EMPTY });
+      set({ selected: null, detail: { state: "idle" }, lit: EMPTY, isolated: false });
       return;
     }
     if (id === get().selected && get().detail.state !== "error") return;
@@ -85,6 +89,8 @@ export const useAtlasStore = create<AtlasState>()((set, get) => ({
     if (node === get().hovered) return;
     set({ hovered: node, hoveredFocus: node ? (get().nodes.get(node)?.focus_fma_id ?? node) : null });
   },
+
+  toggleIsolated: () => set((s) => ({ isolated: s.selected !== null && !s.isolated })),
 
   cycleMode: (group) =>
     set((s) => ({ modes: { ...s.modes, [group]: nextMode(group, s.modes[group]) } })),

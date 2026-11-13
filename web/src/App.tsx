@@ -1,7 +1,7 @@
 import { useProgress } from "@react-three/drei";
 import { useEffect, useState } from "react";
 import { getRegionNodes, getRegions } from "./api/client";
-import { regionName } from "./lib/labels";
+import { sceneName } from "./lib/labels";
 import { Attribution } from "./pages/Attribution";
 import { LayerControls } from "./panels/LayerControls";
 import { StructurePanel } from "./panels/StructurePanel";
@@ -67,7 +67,7 @@ function Main() {
           <h1 className="font-serif text-[1.45rem] font-medium tracking-[-0.01em]">Atlas</h1>
           {regions[0] && (
             <span className="font-serif text-[1.05rem] italic text-mist-dim">
-              {regionName(regions[0].region)}
+              {sceneName(regions)}
             </span>
           )}
         </div>

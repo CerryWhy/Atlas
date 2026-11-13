@@ -3,6 +3,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Suspense, useMemo } from "react";
 import { Vector3 } from "three";
 import { useAtlasStore } from "../store/atlas";
+import { CameraRig, cancelFlight } from "./CameraRig";
 import { leaderBus } from "./leader";
 import { Region } from "./Region";
 
@@ -32,7 +33,8 @@ export function Atlas() {
 
   return (
     <Canvas
-      camera={{ fov: 30, near: 0.01, far: 50, position: [0, 1.0, 1.6] }}
+      // near piccolo e fisso: il flyTo porta la camera a pochi centimetri dalle strutture minute
+      camera={{ fov: 30, near: 0.005, far: 30, position: [0, 1.0, 3.2] }}
       dpr={[1, 2]}
       gl={{ antialias: true, alpha: true }}
       onPointerMissed={() => select(null)}
@@ -46,16 +48,18 @@ export function Atlas() {
         makeDefault
         enableDamping
         dampingFactor={0.08}
-        minDistance={0.2}
-        maxDistance={3}
+        minDistance={0.03}
+        maxDistance={6}
+        onStart={cancelFlight}
       />
       <Suspense fallback={null}>
-        <Bounds fit clip observe margin={1.05}>
+        <Bounds fit observe margin={1.05}>
           {regions.map((r) => (
             <Region key={r.mesh_file} file={r.mesh_file} />
           ))}
         </Bounds>
       </Suspense>
+      <CameraRig />
       <LeaderProbe />
     </Canvas>
   );

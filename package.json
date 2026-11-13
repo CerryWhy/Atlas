@@ -3,14 +3,15 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "node scripts/run-venv.mjs uvicorn api.main:app --reload --reload-dir api --port 8000",
+    "dev:api": "node scripts/run-venv.mjs uvicorn api.main:app --port 8000",
     "dev:web": "npm --prefix web run dev",
     "gen:types": "npm --prefix web run gen:types",
     "pipeline:fetch": "node scripts/run-venv.mjs python -m pipeline.01_fetch_sources",
     "pipeline:meshes": "node scripts/run-venv.mjs python -m pipeline.02_build_meshes",
     "pipeline:ontologies": "node scripts/run-venv.mjs python -m pipeline.03_load_ontologies",
     "pipeline:bridge": "node scripts/run-venv.mjs python -m pipeline.04_bridge_fma_uberon",
-    "pipeline": "npm run pipeline:fetch && npm run pipeline:meshes && npm run pipeline:ontologies && npm run pipeline:bridge"
+    "pipeline": "npm run pipeline:fetch && npm run pipeline:meshes && npm run pipeline:ontologies && npm run pipeline:bridge",
+    "dev:api:reload": "node scripts/run-venv.mjs uvicorn api.main:app --reload --reload-dir api --port 8000"
   },
   "devDependencies": {
     "@gltf-transform/cli": "4.5.1",

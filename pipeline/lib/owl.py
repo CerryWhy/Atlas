@@ -54,20 +54,20 @@ class FmaClass:
     equivalents: dict[str, list[str]] = field(default_factory=dict)
 
 
-def read_fma(path: Path, wanted: set[str]) -> tuple[dict[str, FmaClass], str]:
-    """Classi FMA richieste + versione dell'ontologia."""
+def read_fma(path: Path, wanted: set[str]) -> tuple[dict[str, FmaClass], str, dict[str, set[str]]]:
+    """Classi FMA richieste, versione dell'ontologia e grafo part_of di TUTTA FMA
+    (parte → tutti), per poter risalire oltre le classi richieste."""
     out: dict[str, FmaClass] = {}
+    graph: dict[str, set[str]] = {}
     version = ""
     for elem in _top_level(path):
         if elem.tag == OWL + "Ontology":
             version = elem.findtext(OWL + "versionInfo") or ""
         elif elem.tag == OWL + "Class":
             fma_id = _fma_curie(elem.get(RDF + "about"))
-            if fma_id is None or fma_id not in wanted:
+            if fma_id is None:
                 continue
-            cls = out.setdefault(fma_id, FmaClass(fma_id))
-            cls.label = elem.findtext(RDFS + "label")
-            cls.preferred_name = elem.findtext(FMA + "preferred_name")
+            wholes: set[str] = set()
             for restr in elem.iterfind(f"{RDFS}subClassOf/{OWL}Restriction"):
                 prop = restr.find(OWL + "onProperty")
                 target = restr.find(OWL + "someValuesFrom")
@@ -75,7 +75,15 @@ def read_fma(path: Path, wanted: set[str]) -> tuple[dict[str, FmaClass], str]:
                     continue
                 whole = _fma_curie(target.get(RDF + "resource"))
                 if prop.get(RDF + "resource") in FMA_PART_OF and whole:
-                    cls.part_of.add(whole)
+                    wholes.add(whole)
+            if wholes:
+                graph[fma_id] = wholes
+            if fma_id not in wanted:
+                continue
+            cls = out.setdefault(fma_id, FmaClass(fma_id))
+            cls.label = elem.findtext(RDFS + "label")
+            cls.preferred_name = elem.findtext(FMA + "preferred_name")
+            cls.part_of = set(wholes)
         elif elem.tag == OWL + "Axiom":
             prop = elem.find(OWL + "annotatedProperty")
             if prop is None or prop.get(RDF + "resource") != FMA_NON_ENGLISH:
@@ -89,7 +97,25 @@ def read_fma(path: Path, wanted: set[str]) -> tuple[dict[str, FmaClass], str]:
                 cls.equivalents.setdefault(language, []).append(name)
     if not version:
         raise LookupError(f"{path.name} senza owl:versionInfo")
-    return out, version
+    return out, version, graph
+
+
+def nearest_whole(start: str, graph: dict[str, set[str]], targets: set[str]) -> str | None:
+    """Il "tutto" più vicino tra `targets`, risalendo part_of in ampiezza (BFS).
+    A parità di distanza vince l'ID più basso, per avere un risultato stabile."""
+    frontier, seen = [start], {start}
+    while frontier:
+        hits = sorted(t for t in frontier if t in targets)
+        if hits:
+            return hits[0]
+        nxt: list[str] = []
+        for node in frontier:
+            for whole in sorted(graph.get(node, ())):
+                if whole not in seen:
+                    seen.add(whole)
+                    nxt.append(whole)
+        frontier = nxt
+    return None
 
 
 def read_restrictions(path: Path, prop_iri: str, subject_prefix: str) -> list[tuple[str, str]]:

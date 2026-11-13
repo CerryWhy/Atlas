@@ -22,5 +22,9 @@ const REGION_NAMES: Record<string, string> = {
 export const regionName = (key: string | null | undefined): string =>
   key ? (REGION_NAMES[key] ?? capitalize(key)) : "Atlante";
 
+/** Nome della scena: la regione se è una sola, il corpo se sono più d'una. */
+export const sceneName = (regions: readonly { region?: string | null }[]): string =>
+  regions.length === 1 ? regionName(regions[0]?.region) : regions.length > 1 ? "Corpo umano" : "Atlante";
+
 /** 'FMA:7197' → 'FMA 7197' (più leggibile nei testi; l'ID resta quello). */
 export const spellId = (curie: string): string => curie.replace(":", " ");

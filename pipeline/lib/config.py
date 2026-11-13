@@ -34,16 +34,38 @@ ICD11_RELEASE_FILE = ICD11_DIR / "RELEASE"
 
 GEOMETRY_JSON = BUILD / "geometry.json"
 
-# ─── Regione attiva ─────────────────────────────────────────────────────────
-# Il confine della regione è geometrico e riproducibile (vedi 02_build_meshes):
-#   - box del concetto BodyParts3D indicato (per FMA "abdomen" include la pelvi);
-#   - tetto opzionale: una mesh sotto la quale l'elemento deve trovarsi (il diaframma).
-ACTIVE_REGION = "abdomen"
-REGION_BOUNDARY_FMA = {"abdomen": "FMA:9577"}  # abdomen
-REGION_CEILING_FMA = {"abdomen": "FMA:13295"}  # diaphragm
-# Un elemento è nella regione se almeno questa quota dei suoi vertici cade nel box…
+
+# ─── Regioni ────────────────────────────────────────────────────────────────
+# Ogni regione è un GLB. Un elemento mesh finisce in UNA sola regione, decisa da queste
+# regole nell'ordine in cui compaiono (la prima che lo reclama vince):
+#   - `concepts`: gli elementi del concetto BodyParts3D indicato e di tutte le sue parti;
+#   - `box_fma`: elementi la cui maggior parte dei vertici cade nel box di quel concetto
+#     (per FMA "abdomen" il box include la pelvi), e che non poggiano sopra `ceiling_fma`
+#     (il diaframma: toglie cuore e basi polmonari dall'addome).
+# Gli elementi che nessuna regola reclama (vasi, nervi, visceri che attraversano più
+# regioni) vanno alla regione dell'elemento reclamato più vicino.
+# Aggiungere o cambiare una regione è un cambio di questa tabella, non dell'applicazione.
+@dataclass(frozen=True)
+class RegionRule:
+    key: str
+    concepts: tuple[str, ...] = ()
+    box_fma: str | None = None
+    ceiling_fma: str | None = None
+
+
+REGIONS: tuple[RegionRule, ...] = (
+    RegionRule("head", concepts=("FMA:7154",)),  # head
+    RegionRule("neck", concepts=("FMA:7155",)),  # neck
+    RegionRule("upper_limb", concepts=("FMA:7185", "FMA:7186")),  # right/left upper limb
+    RegionRule("lower_limb", concepts=("FMA:7184", "FMA:7187", "FMA:7188")),  # lower limbs
+    RegionRule("abdomen", box_fma="FMA:9577", ceiling_fma="FMA:13295"),  # abdomen; diaphragm
+    RegionRule("thorax", concepts=("FMA:9576",)),  # thorax
+)
+REGION_KEYS: tuple[str, ...] = tuple(r.key for r in REGIONS)
+
+# Un elemento è nel box di una regola `box_fma` se almeno questa quota dei suoi vertici ci cade…
 ELEMENT_MIN_FRACTION = 0.5
-# …e un concetto è "della regione" se almeno questa quota dei suoi elementi vi cade.
+# …e un concetto è "di una regione" se almeno questa quota dei suoi elementi vi cade.
 REGION_MIN_FRACTION = 0.5
 
 

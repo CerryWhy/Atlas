@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { shortVersion } from "../panels/CitationList";
-import { displayName, regionName, spellId } from "./labels";
+import { displayName, regionName, sceneName, spellId } from "./labels";
 
 describe("nomi mostrati", () => {
   it("preferisce l'italiano quando la fonte lo dà, altrimenti l'inglese", () => {
@@ -14,6 +14,12 @@ describe("nomi mostrati", () => {
     expect(regionName("abdomen")).toBe("Addome");
     expect(regionName("mediastinum")).toBe("Mediastinum");
     expect(regionName(null)).toBe("Atlante");
+  });
+
+  it("chiama la scena col nome della regione, o del corpo se le regioni sono più d'una", () => {
+    expect(sceneName([{ region: "abdomen" }])).toBe("Addome");
+    expect(sceneName([{ region: "abdomen" }, { region: "thorax" }])).toBe("Corpo umano");
+    expect(sceneName([])).toBe("Atlante");
   });
 
   it("rende leggibili ID e versioni senza alterarli", () => {

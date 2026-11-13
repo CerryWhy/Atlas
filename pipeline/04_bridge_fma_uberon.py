@@ -6,7 +6,8 @@ Il ponte è l'xref `FMA:nnnn` dichiarato sui termini UBERON. Regole:
 - più di uno                                   → unmapped('fma_multi_uberon'), nessuna scelta
 Nessuna deduzione per analogia o per nome (I5): la copertura va misurata, non nascosta.
 
-Scrive anche data/reports/unmapped_<regione>.md, da leggere a ogni esecuzione.
+Scrive un report per regione, data/reports/unmapped_<regione>.md, e un riepilogo
+data/reports/coverage.md. Vanno letti a ogni esecuzione.
 Idempotente: ricalcola e riscrive tutto.
 
 Uso:  python -m pipeline.04_bridge_fma_uberon
@@ -32,7 +33,6 @@ def uberon_by_fma() -> tuple[dict[str, list[str]], dict[str, str]]:
 
 
 def main() -> int:
-    region = config.ACTIVE_REGION
     by_fma, uberon_names = uberon_by_fma()
 
     conn = db.connect(config.DB_PATH)
@@ -56,44 +56,60 @@ def main() -> int:
         db.set_uberon_ids(conn, pairs)
         db.replace_unmapped(conn, ["fma_no_uberon", "fma_multi_uberon"], unmapped)
 
-    total, mapped, with_mesh = db.region_coverage(conn, region)
-    missing = db.region_unmapped(conn, region)
     all_total = len(structures)
     all_mapped = sum(1 for u, _ in pairs if u)
-    pct = 100 * mapped / total if total else 0.0
+    counts = db.unmapped_counts(conn)
+    config.REPORTS.mkdir(parents=True, exist_ok=True)
 
-    lines = [
-        f"# Strutture non mappate — regione `{region}`",
-        "",
-        f"- Strutture nella regione: **{total}** ({with_mesh} con nodo mesh proprio)",
-        f"- Con `uberon_id`: **{mapped}** ({pct:.1f}%)",
-        f"- Senza `uberon_id`: **{total - mapped}** ({100 - pct:.1f}%)",
-        f"- Su tutto il corpo: {all_mapped}/{all_total} ({100 * all_mapped / all_total:.1f}%)",
+    summary = [
+        "# Copertura FMA → UBERON per regione",
         "",
         "Una struttura senza `uberon_id` è *muta*: nessun fenotipo HPO e nessuna malattia",
         "la raggiungono direttamente.",
+        "",
+        "| regione | strutture | con `uberon_id` | % | con nodo mesh |",
+        "|---|---|---|---|---|",
+    ]
+    for region in config.REGION_KEYS:
+        total, mapped, with_mesh = db.region_coverage(conn, region)
+        if total == 0:
+            continue
+        pct = 100 * mapped / total
+        summary.append(f"| {region} | {total} | {mapped} | {pct:.1f}% | {with_mesh} |")
+        missing = db.region_unmapped(conn, region)
+        lines = [
+            f"# Strutture non mappate — regione `{region}`",
+            "",
+            f"- Strutture nella regione: **{total}** ({with_mesh} con nodo mesh proprio)",
+            f"- Con `uberon_id`: **{mapped}** ({pct:.1f}%)",
+            f"- Senza `uberon_id`: **{total - mapped}** ({100 - pct:.1f}%)",
+            "",
+            f"## Strutture senza `uberon_id` ({len(missing)})",
+            "",
+            "| depth | fma_id | label |",
+            "|---|---|---|",
+            *[f"| {d} | {f} | {lbl} |" for f, lbl, d in missing],
+            "",
+        ]
+        (config.REPORTS / f"unmapped_{region}.md").write_text("\n".join(lines), encoding="utf-8")
+        print(f"  {region:<11} {mapped:4}/{total:<4} con uberon_id ({pct:.1f}%)")
+
+    summary += [
+        "",
+        f"Su tutto il corpo: {all_mapped}/{all_total} ({100 * all_mapped / all_total:.1f}%).",
         "",
         "## Conteggi `unmapped` per tipo (tutto il database)",
         "",
         "| kind | righe |",
         "|---|---|",
-        *[f"| `{k}` | {n} |" for k, n in db.unmapped_counts(conn)],
-        "",
-        f"## Strutture della regione senza `uberon_id` ({len(missing)})",
-        "",
-        "| depth | fma_id | label |",
-        "|---|---|---|",
-        *[f"| {d} | {f} | {lbl} |" for f, lbl, d in missing],
+        *[f"| `{k}` | {n} |" for k, n in counts],
         "",
     ]
-    config.REPORTS.mkdir(parents=True, exist_ok=True)
-    report = config.REPORTS / f"unmapped_{region}.md"
-    report.write_text("\n".join(lines), encoding="utf-8")
+    (config.REPORTS / "coverage.md").write_text("\n".join(summary), encoding="utf-8")
     conn.close()
 
-    print(f"  {region}: {mapped}/{total} strutture con uberon_id ({pct:.1f}%)")
     print(f"  corpo intero: {all_mapped}/{all_total}")
-    print(f"OK: report in {report.relative_to(config.ROOT)}")
+    print(f"OK: report in {config.REPORTS.relative_to(config.ROOT)}")
     return 0
 
 

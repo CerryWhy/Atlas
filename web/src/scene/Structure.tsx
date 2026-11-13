@@ -48,9 +48,11 @@ export function Structure({ node, geometry }: Props) {
   const hot = useAtlasStore((s) => s.hoveredFocus === node.focus_fma_id);
   const select = useAtlasStore((s) => s.select);
   const hover = useAtlasStore((s) => s.hover);
+  const isolated = useAtlasStore((s) => s.isolated);
 
-  // Una struttura selezionata si mostra piena anche se il suo gruppo è spento.
-  const effective: Mode = lit ? "solid" : mode;
+  // Una struttura selezionata si mostra piena anche se il suo gruppo è spento;
+  // in isolamento tutto il resto sparisce.
+  const effective: Mode = lit ? "solid" : isolated && anySelected ? "hidden" : mode;
   const ghost = effective === "ghost";
 
   const dim = anySelected && !lit;

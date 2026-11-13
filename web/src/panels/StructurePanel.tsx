@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Citation, Structure } from "../api/client";
-import { displayName, regionName, spellId } from "../lib/labels";
+import { displayName, sceneName, spellId } from "../lib/labels";
 import { useAtlasStore } from "../store/atlas";
 import type { FmaId } from "../types/ids";
 import { CitationList } from "./CitationList";
@@ -29,7 +29,7 @@ function SourceLink({ cite, children }: { cite: Citation | undefined; children: 
 function Intro() {
   const regions = useAtlasStore((s) => s.regions);
   const count = useAtlasStore((s) => s.nodes.size);
-  const name = regionName(regions[0]?.region);
+  const name = sceneName(regions);
   return (
     <div className="pt-6">
       <h2 className="font-serif text-[clamp(1.6rem,4.2vw,2.2rem)] font-medium leading-[1.1] tracking-[-0.01em]">
@@ -117,6 +117,28 @@ function Heading({ title, data }: { title: string; data?: Structure }) {
   );
 }
 
+/** Comandi di vista sulla selezione: isolarla, o tornare al quadro intero. */
+function ViewActions() {
+  const isolated = useAtlasStore((s) => s.isolated);
+  const toggle = useAtlasStore((s) => s.toggleIsolated);
+  const select = useAtlasStore((s) => s.select);
+  return (
+    <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[0.85rem]">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-pressed={isolated}
+        className={`cursor-pointer ${LINK}`}
+      >
+        {isolated ? "Mostra anche il resto" : "Mostra solo questo"}
+      </button>
+      <button type="button" onClick={() => select(null)} className={`cursor-pointer ${LINK}`}>
+        Chiudi la scheda
+      </button>
+    </div>
+  );
+}
+
 function Entry({ data }: { data: Structure }) {
   const select = useAtlasStore((s) => s.select);
   const tabs: { key: TabKey; label: string; n: number }[] = [
@@ -141,6 +163,7 @@ function Entry({ data }: { data: Structure }) {
       <div className="mt-1.5">
         <Heading title={displayName(data)} data={data} />
       </div>
+      <ViewActions />
 
       {data.diseases.length + data.phenotypes.length === 0 && (
         <p className="mt-4 border-l-2 border-gauze-300 pl-3 text-[0.88rem] text-ink-soft">

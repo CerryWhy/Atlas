@@ -13,7 +13,7 @@ from pipeline.lib import config
 
 pytestmark = pytest.mark.skipif(not config.DB_PATH.exists(), reason="atlas.db non generato")
 
-REGION = config.ACTIVE_REGION
+REGION = "abdomen"  # regione di riferimento per i criteri di accettazione di Fase 1
 
 
 @pytest.fixture(scope="module")
@@ -49,14 +49,19 @@ def test_liver_descends_at_least_5_levels(conn: sqlite3.Connection) -> None:
     assert levels >= 5
 
 
-def test_unmapped_report_exists_and_matches_db(conn: sqlite3.Connection) -> None:
-    report = config.REPORTS / f"unmapped_{REGION}.md"
+@pytest.mark.parametrize("region", config.REGION_KEYS)
+def test_unmapped_report_exists_and_matches_db(conn: sqlite3.Connection, region: str) -> None:
+    report = config.REPORTS / f"unmapped_{region}.md"
     assert report.exists(), "eseguire 04_bridge_fma_uberon"
-    total = scalar(conn, "SELECT COUNT(*) FROM structure WHERE region = ?", REGION)
-    mapped = scalar(conn, "SELECT COUNT(uberon_id) FROM structure WHERE region = ?", REGION)
+    total = scalar(conn, "SELECT COUNT(*) FROM structure WHERE region = ?", region)
+    mapped = scalar(conn, "SELECT COUNT(uberon_id) FROM structure WHERE region = ?", region)
     text = report.read_text("utf-8")
     assert f"**{total}**" in text and f"**{mapped}**" in text
-    # ogni struttura senza uberon_id è registrata, non nascosta
+    assert (config.REPORTS / "coverage.md").exists()
+
+
+def test_no_unmapped_structure_is_silent(conn: sqlite3.Connection) -> None:
+    """Ogni struttura senza uberon_id è registrata in `unmapped`, non nascosta."""
     silent = scalar(
         conn,
         """
@@ -66,6 +71,28 @@ def test_unmapped_report_exists_and_matches_db(conn: sqlite3.Connection) -> None
         """,
     )
     assert silent == 0
+
+
+# ─── Fase 7: ogni regione è una riesecuzione con un filtro diverso ──────────
+@pytest.mark.parametrize("region", config.REGION_KEYS)
+def test_every_region_has_a_glb_with_nodes(conn: sqlite3.Connection, region: str) -> None:
+    nodes = scalar(conn, "SELECT COUNT(*) FROM structure WHERE mesh_file = ?", f"{region}.glb")
+    assert nodes > 0
+    assert (config.MESHES / f"{region}.glb").exists()
+
+
+def test_each_node_lives_in_exactly_one_glb(conn: sqlite3.Connection) -> None:
+    """Un FMA ID non compare in due file: la scena lo può mappare senza ambiguità (I1)."""
+    import json
+
+    geometry = json.loads(config.GEOMETRY_JSON.read_text("utf-8"))
+    seen: dict[str, str] = {}
+    for key, region in geometry["regions"].items():
+        for fma_id in region["nodes"]:
+            assert fma_id not in seen, f"{fma_id} in {seen.get(fma_id)} e {key}"
+            seen[fma_id] = key
+    in_db = scalar(conn, "SELECT COUNT(*) FROM structure WHERE mesh_node IS NOT NULL")
+    assert in_db == len(seen)
 
 
 def test_every_mesh_structure_has_centroid_and_radius(conn: sqlite3.Connection) -> None:

@@ -37,12 +37,17 @@ def test_liver_hierarchy_and_highlight_nodes() -> None:
 
 def test_region_nodes_resolve_to_a_focus_structure() -> None:
     regions = client.get("/regions").json()
-    assert len(regions) == 1 and regions[0]["mesh_file"] == "abdomen.glb"
-    nodes = client.get("/regions/abdomen.glb/nodes").json()
-    assert len(nodes) == regions[0]["structures"]
-    assert len({n["fma_id"] for n in nodes}) == len(nodes)
-    for n in nodes[:40]:
-        assert client.get(f"/structure/{n['focus_fma_id']}").status_code == 200
+    assert len(regions) >= 2
+    assert "abdomen.glb" in {r["mesh_file"] for r in regions}
+    seen: set[str] = set()
+    for region in regions:
+        nodes = client.get(f"/regions/{region['mesh_file']}/nodes").json()
+        assert len(nodes) == region["structures"]
+        ids = {n["fma_id"] for n in nodes}
+        assert len(ids) == len(nodes) and not (ids & seen), "un nodo sta in un solo GLB"
+        seen |= ids
+        for n in nodes[:10]:
+            assert client.get(f"/structure/{n['focus_fma_id']}").status_code == 200
 
 
 def test_free_text_ids_are_rejected() -> None:
@@ -52,7 +57,7 @@ def test_free_text_ids_are_rejected() -> None:
 
 def test_unknown_structure_is_404() -> None:
     assert client.get("/structure/FMA:1").status_code == 404
-    assert client.get("/regions/thorax.glb/nodes").status_code == 404
+    assert client.get("/regions/pancreas.glb/nodes").status_code == 404
 
 
 def test_attribution_includes_bodyparts3d() -> None:

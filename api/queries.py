@@ -127,11 +127,18 @@ def mesh_nodes(conn: sqlite3.Connection, mesh_file: str) -> list[sqlite3.Row]:
 
 def mesh_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """GLB disponibili: l'app li scopre da qui (nessun file cablato nel frontend)."""
+    # la regione di un file è quella della maggioranza dei suoi nodi
     return conn.execute(
         """
-        SELECT mesh_file, MAX(region) AS region, COUNT(*) AS structures
-        FROM structure WHERE mesh_file IS NOT NULL
-        GROUP BY mesh_file ORDER BY mesh_file
+        WITH c AS (
+          SELECT mesh_file, region, COUNT(*) AS n
+          FROM structure WHERE mesh_file IS NOT NULL GROUP BY mesh_file, region
+        )
+        SELECT mesh_file,
+               (SELECT c2.region FROM c c2 WHERE c2.mesh_file = c.mesh_file
+                ORDER BY c2.region IS NULL, c2.n DESC, c2.region LIMIT 1) AS region,
+               SUM(n) AS structures
+        FROM c GROUP BY mesh_file ORDER BY mesh_file
         """
     ).fetchall()
 

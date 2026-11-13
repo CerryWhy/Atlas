@@ -73,13 +73,17 @@ OWNED_UNMAPPED = [
 def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, ...]]]:
     tree = bp3d.load_tree()
     geometry = json.loads(config.GEOMETRY_JSON.read_text("utf-8"))
-    region, mesh_file = geometry["region"], geometry["mesh_file"]
-    nodes: dict[str, list[str]] = geometry["nodes"]
-    geo: dict[str, dict[str, float]] = geometry["concepts"]
+    # nodo (FMA ID) → file GLB che lo ospita; un nodo sta in un solo file
+    node_file: dict[str, str] = {
+        fma_id: region["mesh_file"]
+        for region in geometry["regions"].values()
+        for fma_id in region["nodes"]
+    }
+    geo: dict[str, dict[str, float | str]] = geometry["concepts"]
 
-    fma, fma_version = owl.read_fma(config.FMA_OWL, set(tree.labels))
+    fma, fma_version, fma_part_of = owl.read_fma(config.FMA_OWL, set(tree.labels))
     unmapped: list[tuple[object, ...]] = []
-    rows = []
+    rows: list[dict[str, object]] = []
     for fma_id, bp_label in tree.labels.items():
         cls = fma.get(fma_id)
         if cls is None or not (cls.preferred_name or cls.label):
@@ -96,8 +100,19 @@ def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, .
             )
         ancestors = [fma_id, *tree.ancestors(fma_id)]
         system = next((SYSTEM_ROOTS[a] for a in ancestors if a in SYSTEM_ROOTS), None)
+        if system is None:
+            # l'albero di BodyParts3D colloca molte parti sotto una regione (testa, torace):
+            # l'apparato lo dichiara FMA, risalendo il suo part_of
+            whole = owl.nearest_whole(fma_id, fma_part_of, set(SYSTEM_ROOTS))
+            system = SYSTEM_ROOTS[whole] if whole else None
         g = geo.get(fma_id)
-        in_region = g is not None and g["region_fraction"] >= config.REGION_MIN_FRACTION
+        # regione di un concetto: quella che ospita la maggioranza dei suoi elementi, se
+        # ne ospita abbastanza; i concetti diffusi (un intero apparato) restano senza.
+        region = (
+            str(g["region"])
+            if g is not None and float(g["region_share"]) >= config.REGION_MIN_FRACTION
+            else None
+        )
         equivalents = cls.equivalents if cls else {}
         rows.append(
             {
@@ -107,10 +122,10 @@ def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, .
                 "label_it": next(iter(equivalents.get("Italian", [])), None),
                 "parent_fma_id": parent,
                 "system": system,
-                "region": region if in_region else None,
+                "region": region,
                 "depth": tree.depth(fma_id),
-                "mesh_file": mesh_file if fma_id in nodes else None,
-                "mesh_node": fma_id if fma_id in nodes else None,
+                "mesh_file": node_file.get(fma_id),
+                "mesh_node": fma_id if fma_id in node_file else None,
                 "cx": g["cx"] if g else None,
                 "cy": g["cy"] if g else None,
                 "cz": g["cz"] if g else None,
@@ -120,7 +135,8 @@ def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, .
     # i genitori vanno inseriti prima dei figli (FK su parent_fma_id)
     rows.sort(key=lambda r: (int(str(r["depth"])), str(r["fma_id"])))
     db.upsert_structures(conn, rows)
-    print(f"  structure: {len(rows)} concetti, {sum(1 for r in rows if r['region'])} in {region}")
+    per_region = Counter(str(r["region"]) for r in rows if r["region"])
+    print(f"  structure: {len(rows)} concetti; per regione: {dict(sorted(per_region.items()))}")
     return fma_version, unmapped
 
 

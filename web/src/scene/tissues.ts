@@ -36,7 +36,7 @@ export const GROUPS: Record<GroupKey, Group> = {
   genital: { label: "Apparato genitale", color: "#c58fa3", modes: ["solid", "hidden"] },
   respiratory: { label: "Vie respiratorie", color: "#d7a9a4", modes: ["solid", "hidden"] },
   nervous: { label: "Sistema nervoso", color: "#e0cf8a", modes: ["solid", "hidden"] },
-  frame: { label: "Parete e scheletro", color: "#e9e2cf", modes: ["ghost", "solid", "hidden"] },
+  frame: { label: "Ossa, muscoli e parete", color: "#e9e2cf", modes: ["ghost", "solid", "hidden"] },
 };
 
 export const GROUP_ORDER = Object.keys(GROUPS) as GroupKey[];
