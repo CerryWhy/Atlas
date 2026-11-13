@@ -3,7 +3,7 @@
 Per un agente di coding (o per te) che apre una nuova sessione. Leggi prima `SPEC.md`:
 contiene gli invarianti non negoziabili. Questo file dice a che punto siamo.
 
-## Stato (13 novembre 2026)
+## Stato (13 novembre 2026, sera)
 
 Fatto e sul branch `main`:
 
@@ -18,19 +18,55 @@ Fatto e sul branch `main`:
 - **Interfaccia**: scena 3D, ricerca, `flyTo`, "Mostra solo questo", pagina `/attribution`.
 - **Test**: 53 Python (`pytest`), 14 web (`vitest`); ruff, mypy, tsc, eslint puliti.
 
+Sul branch `claude/funny-franklin-2ikacr` (non ancora su `main`), scritto in una
+sessione cloud **senza accesso alle fonti** (rete bloccata): codice e test unitari
+passano (74 Python, di cui 45 saltati senza dati; 17 web), ma **nulla è stato
+verificato sui dati reali**.
+
+- **Ereditarietà dalla classe più generale** (`fma_is_a`, `pipeline/lib/taxonomy.py`):
+  per le strutture ancora senza contenuto clinico, l'antenato FMA più vicino che ne ha.
+- **Nomi italiani da Wikidata** via FMA ID (P1402, CC0), solo legami uno a uno
+  (`pipeline/lib/wikidata.py`); la scheda cita la voce Wikidata.
+- **Fenotipi bilaterali** esclusi dalle strutture con un lato (`phenotype.bilateral`,
+  `structure.sided`).
+- `pip install -e` funziona su un clone pulito.
+
 Non fatto: Fasi 3–6 della SPEC (documenti, assistente con citazioni, sintomo → corpo,
 Europe PMC), pelle/muscoli come livelli, contorno sulla struttura attiva, misura degli
 fps (va fatta su uno schermo reale).
+
+## Da fare per primo: verificare sui dati reali
+
+```bash
+git fetch origin && git checkout claude/funny-franklin-2ikacr
+.venv/Scripts/pip install -e ".[dev]"
+npm run pipeline        # 01 scarica anche la query Wikidata; 03 e 04 vanno rieseguiti
+PYTHONUTF8=1 .venv/Scripts/pytest -q    # i test sui dati non devono più essere saltati
+```
+
+Poi leggere:
+- `data/reports/is_a_links.md`: la tabella "Antenati usati" in cima. Se compaiono
+  antenati troppo generici (tipo "Organ", "Muscle organ", "Artery"), abbassare
+  `ISA_MAX_DESCENDANTS` (ora 300) o `ISA_MAX_HOPS` (ora 3) in `pipeline/lib/config.py`
+  e rieseguire `npm run pipeline:bridge`.
+- `data/reports/coverage.md`: le colonne "+ lato" e "+ classe generale" dicono quanto
+  hanno reso le due ereditarietà.
+- l'output di 03: quanti nomi italiani da Wikidata e quanti scartati per ambiguità.
+- alcune schede nel browser: un osso o un muscolo con lato, per controllare la nota
+  "classe più generale" e il nome italiano.
+
+Le soglie di `test_bilateral_phenotypes_and_sided_structures_are_marked` (>50, >100)
+sono stime: se il test fallisce, controllare prima i numeri reali.
 
 ## Problemi aperti, in ordine di valore
 
 1. **Copertura clinica bassa**: collo 68%, addome 43%, testa 30%, torace 25%, arti
    inferiori 10%, arti superiori 2% (strutture con legame UBERON esatto). L'ereditarietà
-   ha aiutato, ma restano ~700 strutture senza dati. Vedi `data/reports/coverage.md`.
-2. **Nomi italiani quasi assenti** (FMA ne ha 8 su 1.368). Candidato non verificato:
-   Wikidata via ID FMA (CC0).
+   ha aiutato, ma restavano ~700 strutture senza dati. Ora c'è anche `fma_is_a`: da
+   misurare (vedi sopra). Vedi `data/reports/coverage.md`.
+2. **Nomi italiani quasi assenti** (FMA ne ha 8 su 1.368). Ora c'è Wikidata: da misurare.
 3. **Polmoni senza superficie** in BodyParts3D 4.0 (solo vie bronchiali e vasi).
-4. **Fenotipi "bilateral"** compaiono su strutture con un solo lato (noto, non corretto).
+4. ~~**Fenotipi "bilateral"** su strutture con un solo lato~~: corretto, da verificare.
 5. **Validazione clinica**: serve una persona con formazione medica prima di rendere
    pubblica l'app (SPEC §13). Il repository deve restare **privato**.
 
@@ -74,5 +110,7 @@ Se cambi l'API, rigenera i tipi con l'API accesa: `npm run gen:types`.
 
 ## Prossimo passo suggerito
 
-Alzare la copertura clinica (punto 1) prima di aggiungere nuove funzioni; poi Fase 3
-(documenti con licenza, SPEC §10). Chiedere conferma sulle scelte di fonte e licenza.
+Verificare sui dati quanto sopra. Poi chiudere la Fase 2 (contorno sulla struttura
+attiva, livelli pelle → muscoli → organi, misura degli fps), che la SPEC vuole chiusa
+prima della Fase 3. Poi Fase 3 (documenti con licenza, SPEC §10): chiedere conferma
+sulle scelte di fonte e licenza prima di scrivere codice.
