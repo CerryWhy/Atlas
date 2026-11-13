@@ -56,6 +56,25 @@ def main() -> int:
     except ImportError:
         sys.exit('manca sentence-transformers: pip install -e ".[embed]"')
 
+    # Prima del caricamento (che alla prima esecuzione scarica ~1 GB e non stampa nulla):
+    # si dice subito se la scheda video è visibile, perché sulla CPU ci vogliono ore.
+    import torch
+
+    gpu = torch.cuda.is_available()
+    print(
+        f"  torch {torch.__version__}; scheda video: "
+        f"{torch.cuda.get_device_name(0) if gpu else 'NON trovata'}"
+    )
+    if not gpu and args.device in (None, "cuda"):
+        print(
+            "  ATTENZIONE: senza scheda video questo passo richiede ore. Su Windows "
+            "pip installa torch solo per CPU: vedi README (torch con CUDA)."
+        )
+    print(
+        f"  carico {args.model} (la prima volta scarica ~1 GB: può non stampare "
+        "nulla per qualche minuto)...",
+        flush=True,
+    )
     model = SentenceTransformer(args.model, device=args.device)
     # sentence-transformers ≥ 6 ha rinominato il metodo
     get_dim = (
