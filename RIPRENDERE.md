@@ -45,9 +45,17 @@ la pipeline completa non gira qui.
   nomi italiani) e il criterio "ogni struttura addominale con `uberon_id` ha ≥ 1
   documento", che richiede le regioni.
 
-**Ricerca (accettazione Fase 3, 20 domande in `tests/fixtures/search_queries.json`)**:
-con il solo MedlinePlus indicizzato (prova parziale, e5-small su CPU) 12/20; la
-misura sull'indice di prova completo è in corso.
+**Ricerca (accettazione Fase 3, 20 domande in `tests/fixtures/search_queries.json`,
+soglia ≥ 18 nei primi 5)**: qui, con il modello piccolo (`multilingual-e5-small`) su
+CPU e indicizzando solo il primo chunk di ogni documento (`--first-chunks 1`, 17.507
+vettori su ~140.000), **17/20: il test non passa per una domanda**. Mancate:
+- "calcoli della colecisti e colica biliare": trova "Choledocholithiasis" (pertinente,
+  ma non tra i titoli attesi);
+- "milza ingrossata, splenomegalia" e "ittero nel neonato": risposte sbagliate.
+Le domande e i titoli attesi NON vanno ritoccati dopo aver visto i risultati. La misura
+che conta è quella con l'indice completo e `multilingual-e5-base` (la configurazione
+predefinita), da fare sul computer con GPU. Se resta sotto 18, migliorare il recupero
+(es. sinonimi italiani → inglesi nella domanda, o un riordino dei risultati), non il test.
 
 Non fatto: Fasi 4–6 della SPEC (assistente con citazioni, sintomo → corpo, Europe PMC).
 
