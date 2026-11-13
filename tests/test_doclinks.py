@@ -126,8 +126,13 @@ def test_structures_without_documents_borrow_from_their_container() -> None:
     got = {(d, f): (r, b, via) for d, f, r, b, via in structures}
     # il lobo destro (senza documenti propri) prende quelli diretti del fegato
     assert got[("statpearls:article-1", "FMA:13362")] == (0.3, "container", "Liver (FMA:7197)")
-    # il colon trasverso: in scena il genitore è troppo largo; via UBERON is_a + part_of
-    assert got[("medlineplus:2", "FMA:14546")] == (0.3, "container", "colon (UBERON:0001155)")
+    # il colon trasverso: in scena il genitore è troppo largo; via UBERON is_a + part_of,
+    # quindi "classe", non "contenitore"
+    assert got[("medlineplus:2", "FMA:14546")] == (
+        0.3,
+        "container_class",
+        "colon (UBERON:0001155)",
+    )
 
 
 def test_generic_uberon_terms_are_not_containers() -> None:
@@ -142,3 +147,120 @@ def test_generic_uberon_terms_are_not_containers() -> None:
     )
     _, structures = doclinks.link([("medlineplus:2", "MESH", "D003108")], {}, v)
     assert ("medlineplus:2", "FMA:14546") not in {(d, f) for d, f, *_ in structures}
+
+
+def _container_vocab(**kw):  # type: ignore[no-untyped-def]
+    """Una struttura FMA:100 (UBERON:100) senza documenti, nel mezzo di gerarchie di prova."""
+    from dataclasses import replace
+
+    base = replace(
+        V,
+        structures_by_uberon={"UBERON:100": {"FMA:100"}},
+        disease_sites={},
+        uberon_part_of={},
+        structure_parent={},
+        broad=frozenset(),
+        labels={},
+    )
+    return replace(base, **kw)
+
+
+def _containers(v):  # type: ignore[no-untyped-def]
+    refs = [(f"doc:{u}", "MESH", f"D{u[-3:]}") for u in ("UBERON:200", "UBERON:300", "UBERON:400")]
+    v = __import__("dataclasses").replace(
+        v, uberon_by_mesh={f"MESH:D{u[-3:]}": u for u in ("UBERON:200", "UBERON:300", "UBERON:400")}
+    )
+    _, structures = doclinks.link(refs, {}, v)
+    return {(d, f): (b, via) for d, f, _r, b, via in structures if f == "FMA:100"}
+
+
+def test_a_uberon_term_of_a_broad_structure_is_not_a_container() -> None:
+    """Il freno sulle strutture larghe vale anche quando ci si arriva da UBERON."""
+    v = _container_vocab(
+        structures_by_uberon={"UBERON:100": {"FMA:100"}, "UBERON:200": {"FMA:9577"}},
+        broad=frozenset({"FMA:9577"}),  # "abdomen"
+        uberon_part_of={"UBERON:100": {"UBERON:200"}},
+    )
+    assert _containers(v) == {}
+
+
+def test_broad_structures_do_not_borrow_documents() -> None:
+    v = _container_vocab(
+        broad=frozenset({"FMA:100"}), uberon_part_of={"UBERON:100": {"UBERON:200"}}
+    )
+    assert _containers(v) == {}
+
+
+def test_container_climb_stops_after_max_hops() -> None:
+    chain = {
+        "UBERON:100": {"UBERON:150"},
+        "UBERON:150": {"UBERON:170"},
+        "UBERON:170": {"UBERON:200"},
+    }
+    assert doclinks.MAX_CONTAINER_HOPS == 2
+    assert _containers(_container_vocab(uberon_part_of=chain)) == {}
+    short = {"UBERON:100": {"UBERON:150"}, "UBERON:150": {"UBERON:200"}}
+    assert _containers(_container_vocab(uberon_part_of=short)) == {
+        ("doc:UBERON:200", "FMA:100"): ("container", "UBERON:200 (UBERON:200)")
+    }
+
+
+def test_part_of_wins_over_is_a_at_the_same_distance() -> None:
+    v = _container_vocab(
+        uberon_part_of={"UBERON:100": {"UBERON:300"}},
+        uberon_is_a={"UBERON:100": {"UBERON:200"}},
+    )
+    assert _containers(v) == {
+        ("doc:UBERON:300", "FMA:100"): ("container", "UBERON:300 (UBERON:300)")
+    }
+
+
+def test_container_documents_keep_the_most_relevant_first() -> None:
+    """Il taglio a MAX_CONTAINER_DOCS tiene i documenti più pertinenti, non i primi in
+    ordine alfabetico: il capitolo di anatomia prima delle pagine sulle malattie."""
+    from dataclasses import replace
+
+    n = doclinks.MAX_CONTAINER_DOCS + 5
+    v = replace(
+        _container_vocab(uberon_part_of={"UBERON:100": {"UBERON:200"}}),
+        uberon_by_name={"colon": "UBERON:200"},
+        diseases={f"MONDO:{i:07d}" for i in range(n)},
+        mondo_by_xref={f"MESH:C{i}": f"MONDO:{i:07d}" for i in range(n)},
+        disease_sites={f"MONDO:{i:07d}": {"UBERON:200"} for i in range(n)},
+    )
+    refs = [(f"a:{i:02d}", "MESH", f"C{i}") for i in range(n)]
+    refs.append(("z:anatomy", "anatomy", "Colon"))
+    _, structures = doclinks.link(refs, {}, v)
+    docs = {d for d, f, *_ in structures if f == "FMA:100"}
+    assert len(docs) == doclinks.MAX_CONTAINER_DOCS
+    assert "z:anatomy" in docs  # pur essendo ultimo in ordine alfabetico
+
+
+def test_structures_with_any_link_get_no_container() -> None:
+    """Anche un legame debole (sede di una malattia in una parte) basta: niente contenitore."""
+    v = _container_vocab(
+        uberon_part_of={"UBERON:100": {"UBERON:200"}},
+        structures_by_uberon={"UBERON:100": {"FMA:100"}, "UBERON:050": set()},
+    )
+    v = __import__("dataclasses").replace(
+        v,
+        diseases={"MONDO:0000001"},
+        mondo_by_xref={"MESH:C1": "MONDO:0000001"},
+        disease_sites={"MONDO:0000001": {"UBERON:100"}},
+    )
+    _, structures = doclinks.link([("d", "MESH", "C1")], {}, v)
+    assert {b for _d, f, _r, b, _v in structures if f == "FMA:100"} == {"disease_site"}
+
+
+def test_generic_terms_block_big_categories_and_systems() -> None:
+    import importlib
+
+    m = importlib.import_module("pipeline.06_link_documents")
+    cap = doclinks.MAX_CONTAINER_SUBCLASSES
+    is_a = {f"UBERON:{i}": {"UBERON:1"} for i in range(10, 10 + cap + 1)}  # 1: troppe
+    is_a |= {"UBERON:2": {"UBERON:3"}, "UBERON:4": {"UBERON:5"}, "UBERON:6": {"UBERON:4"}}
+    names = {"UBERON:5": "anatomical system", "UBERON:4": "digestive system"}
+    generic = m.generic_terms(is_a, names)
+    assert "UBERON:1" in generic
+    assert {"UBERON:5", "UBERON:4", "UBERON:6"} <= generic  # il sistema e le sue sottoclassi
+    assert "UBERON:3" not in generic and "UBERON:2" not in generic

@@ -58,13 +58,33 @@ def uberon_vocab() -> tuple[
     return doclinks.unique_index(by_mesh), doclinks.unique_index(by_name), part_of, names, is_a
 
 
-def generic_terms(is_a: dict[str, set[str]]) -> frozenset[str]:
-    """Termini UBERON con troppe sottoclassi per fare da contenitore (doclinks)."""
+# Le sottoclassi di questo termine UBERON (cercato per nome, I5) sono sistemi
+# ("digestive system", "renal system"): mai contenitori, come gli apparati in scena.
+SYSTEM_ROOT_NAME = "anatomical system"
+
+
+def generic_terms(is_a: dict[str, set[str]], names: dict[str, str]) -> frozenset[str]:
+    """Termini UBERON che non fanno da contenitore (doclinks): le categorie con più di
+    MAX_CONTAINER_SUBCLASSES sottoclassi e i sistemi anatomici."""
     cap = doclinks.MAX_CONTAINER_SUBCLASSES
     count = taxonomy.subclass_counter(is_a, cap=cap)
-    return frozenset(
-        u for u in is_a.keys() | {p for ps in is_a.values() for p in ps} if count(u) > cap
-    )
+    terms = is_a.keys() | {p for ps in is_a.values() for p in ps}
+    generic = {u for u in terms if count(u) > cap}
+    roots = [u for u, n in names.items() if n == SYSTEM_ROOT_NAME]
+    if len(roots) != 1:
+        print(
+            f"  ! termine UBERON {SYSTEM_ROOT_NAME!r} non trovato (o ambiguo): sistemi non bloccati"
+        )
+        return frozenset(generic)
+    subs: dict[str, set[str]] = {}
+    for child, parents in is_a.items():
+        for p in parents:
+            subs.setdefault(p, set()).add(child)
+    frontier, systems = [roots[0]], {roots[0]}
+    while frontier:
+        frontier = [c for u in frontier for c in subs.get(u, ()) if c not in systems]
+        systems.update(frontier)
+    return frozenset(generic | systems)
 
 
 def main() -> int:
@@ -96,7 +116,7 @@ def main() -> int:
             broad=db.broad_structures(conn, MIN_TARGET_DEPTH),
             structure_parent=db.structure_parents(conn),
             uberon_is_a=uberon_is_a,
-            uberon_generic=generic_terms(uberon_is_a),
+            uberon_generic=generic_terms(uberon_is_a, uberon_labels),
             labels={**uberon_labels, **{f: n for n, f in names}},
         )
         titles = db.document_titles(conn)

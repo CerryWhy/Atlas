@@ -91,6 +91,7 @@ class Reading(BaseModel):
     source: str  # 'statpearls' | 'medlineplus' | 'orphanet'
     title: str
     # 'anatomy_title' | 'mesh_anatomy' | 'disease_site' | 'disease_site_part' | 'container'
+    # | 'container_class'
     basis: str
     relevance: float
     link: str  # es. "Tratta questa struttura" | "Dalla struttura che la contiene: Liver (FMA:7197)"

@@ -122,7 +122,8 @@ def main() -> int:
             print("  tempo scaduto: rieseguire per continuare")
             break
     titled = 0
-    while batch_t := vec.titles_without_vectors(conn, BATCH * 8):
+    out_of_time = bool(args.max_minutes and time.monotonic() - started > args.max_minutes * 60)
+    while not out_of_time and (batch_t := vec.titles_without_vectors(conn, BATCH * 8, sources)):
         vectors = model.encode(
             [f"passage: {title}" for _doc, title in batch_t],
             batch_size=64,
@@ -131,10 +132,14 @@ def main() -> int:
         )
         with conn:
             vec.insert_titles(
-                conn, [(doc, v.tolist()) for (doc, _t), v in zip(batch_t, vectors, strict=True)]
+                conn,
+                [(doc, t, v.tolist()) for (doc, t), v in zip(batch_t, vectors, strict=True)],
             )
         titled += len(batch_t)
         print(f"  {titled} titoli", flush=True)
+        if args.max_minutes and time.monotonic() - started > args.max_minutes * 60:
+            print("  tempo scaduto: rieseguire per continuare")
+            break
     total = conn.execute("SELECT COUNT(*) FROM chunk_vec").fetchone()[0]
     titles = conn.execute("SELECT COUNT(*) FROM title_vec").fetchone()[0]
     conn.close()

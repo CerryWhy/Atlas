@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS embedding_meta (
   model TEXT NOT NULL,
   dim   INTEGER NOT NULL
 );
+-- il titolo da cui è stato calcolato ogni vettore di title_vec: se 05 lo cambia, si rifà
+CREATE TABLE IF NOT EXISTS title_vec_src (
+  doc_id TEXT PRIMARY KEY,
+  title  TEXT NOT NULL
+);
 """
 
 
@@ -44,6 +49,8 @@ def ensure(conn: sqlite3.Connection, model: str, dim: int) -> bool:
     for table, key in (("chunk_vec", "chunk_id"), ("title_vec", "doc_id")):
         if reset or not has_table(conn, table):
             conn.execute(f"DROP TABLE IF EXISTS {table}")
+            if table == "title_vec":
+                conn.execute("DELETE FROM title_vec_src")
             conn.execute(
                 f"CREATE VIRTUAL TABLE {table} USING vec0("
                 f"{key} TEXT PRIMARY KEY, embedding float[{dim}] distance_metric=cosine)"
@@ -98,24 +105,46 @@ def delete_orphans(conn: sqlite3.Connection) -> int:
         "SELECT doc_id FROM title_vec WHERE doc_id NOT IN (SELECT doc_id FROM document)"
     ).fetchall()
     conn.executemany("DELETE FROM title_vec WHERE doc_id = ?", gone)
-    return len(orphans) + len(gone)
-
-
-def titles_without_vectors(conn: sqlite3.Connection, limit: int) -> list[tuple[str, str]]:
-    """(doc_id, titolo) dei documenti il cui titolo non ha ancora un vettore."""
-    return conn.execute(
+    conn.execute("DELETE FROM title_vec_src WHERE doc_id NOT IN (SELECT doc_id FROM document)")
+    # titoli cambiati da 05: il vettore vecchio non vale più
+    stale = conn.execute(
         """
+        SELECT s.doc_id FROM title_vec_src s JOIN document d USING (doc_id)
+        WHERE s.title <> d.title
+        """
+    ).fetchall()
+    conn.executemany("DELETE FROM title_vec WHERE doc_id = ?", stale)
+    conn.executemany("DELETE FROM title_vec_src WHERE doc_id = ?", stale)
+    return len(orphans) + len(gone) + len(stale)
+
+
+def titles_without_vectors(
+    conn: sqlite3.Connection, limit: int, sources: set[str] | None = None
+) -> list[tuple[str, str]]:
+    """(doc_id, titolo) dei documenti il cui titolo non ha ancora un vettore,
+    eventualmente solo delle fonti indicate."""
+    where, params = "", []
+    if sources:
+        where = f"AND source IN ({','.join('?' * len(sources))})"
+        params = sorted(sources)
+    return conn.execute(
+        f"""
         SELECT doc_id, title FROM document
-        WHERE doc_id NOT IN (SELECT doc_id FROM title_vec) ORDER BY doc_id LIMIT ?
+        WHERE doc_id NOT IN (SELECT doc_id FROM title_vec) {where} ORDER BY doc_id LIMIT ?
         """,
-        (limit,),
+        (*params, limit),
     ).fetchall()
 
 
-def insert_titles(conn: sqlite3.Connection, rows: list[tuple[str, list[float]]]) -> None:
+def insert_titles(conn: sqlite3.Connection, rows: list[tuple[str, str, list[float]]]) -> None:
+    """rows = (doc_id, titolo usato, vettore)."""
     conn.executemany(
         "INSERT INTO title_vec (doc_id, embedding) VALUES (?, ?)",
-        [(doc_id, serialize(v)) for doc_id, v in rows],
+        [(doc_id, serialize(v)) for doc_id, _t, v in rows],
+    )
+    conn.executemany(
+        "INSERT OR REPLACE INTO title_vec_src (doc_id, title) VALUES (?, ?)",
+        [(doc_id, title) for doc_id, title, _v in rows],
     )
 
 

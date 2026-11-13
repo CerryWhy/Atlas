@@ -120,3 +120,44 @@ def test_merge_keeps_one_hit_per_document_nearest_first() -> None:
     ]
     assert local.merge_by_document(hits, 2) == [("a#5", "a", 0.05), ("b#1", "b", 0.20)]
     assert local.merge_by_document([], 3) == []
+
+
+def test_a_document_found_by_title_comes_first_with_its_first_chunk(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """La domanda è vicina al TITOLO di medlineplus:1 più che a qualunque paragrafo."""
+    conn = sqlite3.connect(tmp_path / "atlas.db")
+    vec.load(conn)
+    with conn:
+        vec.insert_titles(conn, [("medlineplus:1", "Hepatitis", [0.9, 0.1, 0.0, 0.0])])
+    conn.close()
+    hits = client.get("/search", params={"q": "epatite", "k": 2}).json()
+    assert [h["doc_id"] for h in hits] == ["medlineplus:1", "statpearls:article-1"]
+    assert hits[0]["chunk_id"] == "medlineplus:1#0" and hits[0]["text"] == "Hepatitis is..."
+    assert len({h["doc_id"] for h in hits}) == len(hits)  # un risultato per documento
+
+
+def test_search_works_on_an_index_built_before_title_vectors(
+    client: TestClient, tmp_path: Path
+) -> None:
+    conn = sqlite3.connect(tmp_path / "atlas.db")
+    vec.load(conn)
+    with conn:
+        conn.execute("DROP TABLE title_vec")
+    conn.close()
+    hits = client.get("/search", params={"q": "fegato", "k": 2}).json()
+    assert [h["doc_id"] for h in hits] == ["statpearls:article-1", "medlineplus:1"]
+
+
+def test_a_changed_title_gets_a_new_vector(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "t.db")
+    vec.load(conn)
+    db.migrate(conn)
+    with conn:
+        db.upsert_document(conn, ("d:1", "s", "Old", "http://x", "CC BY 4.0", "2026", "t", "h"))
+        vec.ensure(conn, "m", 4)
+        vec.insert_titles(conn, [("d:1", "Old", [1, 0, 0, 0])])
+        assert vec.titles_without_vectors(conn, 10) == []
+        db.upsert_document(conn, ("d:1", "s", "New", "http://x", "CC BY 4.0", "2026", "t", "h"))
+        assert vec.delete_orphans(conn) == 1
+    assert vec.titles_without_vectors(conn, 10) == [("d:1", "New")]
