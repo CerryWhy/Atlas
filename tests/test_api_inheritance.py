@@ -29,10 +29,10 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         )
         conn.executemany(
             "INSERT INTO structure (fma_id, label_en, label_it, label_it_source, label_it_ref,"
-            " region) VALUES (?, ?, ?, ?, ?, 'thorax')",
+            " sided, region) VALUES (?, ?, ?, ?, ?, ?, 'thorax')",
             [
-                ("FMA:9999991", "Right fourth rib", None, None, None),
-                ("FMA:9999992", "Rib", "costola", "wikidata", "Q9999999"),
+                ("FMA:9999991", "Right fourth rib", None, None, None, 1),
+                ("FMA:9999992", "Rib", "costola", "wikidata", "Q9999999", 0),
             ],
         )
         conn.execute(
@@ -44,8 +44,12 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         )
         conn.execute("INSERT INTO phenotype (hpo_id, label) VALUES ('HP:9999999', 'Rib anomaly')")
         conn.execute(
-            "INSERT INTO phenotype_structure (hpo_id, uberon_id) "
-            "VALUES ('HP:9999999', 'UBERON:9999999')"
+            "INSERT INTO phenotype (hpo_id, label, bilateral) "
+            "VALUES ('HP:9999998', 'Bilateral rib anomaly', 1)"
+        )
+        conn.executemany(
+            "INSERT INTO phenotype_structure (hpo_id, uberon_id) VALUES (?, 'UBERON:9999999')",
+            [("HP:9999999",), ("HP:9999998",)],
         )
         db.replace_structure_uberon(
             conn,
@@ -107,3 +111,10 @@ def test_wikidata_name_is_cited(client: TestClient) -> None:
     # senza nome italiano non c'è citazione Wikidata
     body = client.get("/structure/FMA:9999991").json()
     assert not any(c["source"] == "wikidata" for c in body["citations"])
+
+
+def test_bilateral_phenotypes_stay_off_sided_structures(client: TestClient) -> None:
+    sided = client.get("/structure/FMA:9999991").json()
+    assert "Bilateral rib anomaly" not in [p["label"] for p in sided["phenotypes"]]
+    generic = client.get("/structure/FMA:9999992").json()
+    assert "Bilateral rib anomaly" in [p["label"] for p in generic["phenotypes"]]

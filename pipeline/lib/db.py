@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS structure (
   label_it      TEXT,
   label_it_source TEXT,          -- 'fma' | 'wikidata': chi dà il nome italiano
   label_it_ref  TEXT,            -- per 'wikidata': la voce (es. 'Q9368')
+  sided         INTEGER NOT NULL DEFAULT 0,  -- 1 se il nome è "Right …"/"Left …"
   uberon_id     TEXT,
   parent_fma_id TEXT REFERENCES structure(fma_id),
   system        TEXT,
@@ -55,7 +56,8 @@ CREATE INDEX IF NOT EXISTS idx_structure_uberon_uberon ON structure_uberon(ubero
 CREATE TABLE IF NOT EXISTS phenotype (
   hpo_id     TEXT PRIMARY KEY,
   label      TEXT NOT NULL,
-  definition TEXT
+  definition TEXT,
+  bilateral  INTEGER NOT NULL DEFAULT 0   -- 1 se HPO lo dichiara bilaterale (vedi 03)
 );
 
 CREATE TABLE IF NOT EXISTS disease (
@@ -153,7 +155,12 @@ def connect(path: Path) -> sqlite3.Connection:
 # Colonne aggiunte dopo la prima versione dello schema: un database già esistente le
 # riceve con ALTER TABLE (CREATE TABLE IF NOT EXISTS non tocca le tabelle presenti).
 _ADDED_COLUMNS = {
-    "structure": [("label_it_source", "TEXT"), ("label_it_ref", "TEXT")],
+    "structure": [
+        ("label_it_source", "TEXT"),
+        ("label_it_ref", "TEXT"),
+        ("sided", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+    "phenotype": [("bilateral", "INTEGER NOT NULL DEFAULT 0")],
     "structure_uberon": [("unsided_label", "TEXT")],
     "disease_structure": [("source", "TEXT"), ("source_id", "TEXT")],
 }
@@ -187,14 +194,15 @@ def upsert_structures(conn: sqlite3.Connection, rows: Iterable[dict[str, object]
     conn.executemany(
         """
         INSERT INTO structure (fma_id, label_en, label_la, label_it, label_it_source,
-                               label_it_ref, parent_fma_id,
+                               label_it_ref, sided, parent_fma_id,
                                system, region, depth, mesh_file, mesh_node, cx, cy, cz, radius)
         VALUES (:fma_id, :label_en, :label_la, :label_it, :label_it_source,
-                :label_it_ref, :parent_fma_id,
+                :label_it_ref, :sided, :parent_fma_id,
                 :system, :region, :depth, :mesh_file, :mesh_node, :cx, :cy, :cz, :radius)
         ON CONFLICT(fma_id) DO UPDATE SET
           label_en=excluded.label_en, label_la=excluded.label_la, label_it=excluded.label_it,
           label_it_source=excluded.label_it_source, label_it_ref=excluded.label_it_ref,
+          sided=excluded.sided,
           parent_fma_id=excluded.parent_fma_id,
           system=excluded.system, region=excluded.region, depth=excluded.depth,
           mesh_file=excluded.mesh_file, mesh_node=excluded.mesh_node,
@@ -259,8 +267,9 @@ def structure_ids(conn: sqlite3.Connection) -> list[tuple[str, str, str | None]]
 def upsert_phenotypes(conn: sqlite3.Connection, rows: Rows) -> None:
     conn.executemany(
         """
-        INSERT INTO phenotype (hpo_id, label, definition) VALUES (?, ?, ?)
-        ON CONFLICT(hpo_id) DO UPDATE SET label=excluded.label, definition=excluded.definition
+        INSERT INTO phenotype (hpo_id, label, definition, bilateral) VALUES (?, ?, ?, ?)
+        ON CONFLICT(hpo_id) DO UPDATE SET label=excluded.label, definition=excluded.definition,
+          bilateral=excluded.bilateral
         """,
         rows,
     )

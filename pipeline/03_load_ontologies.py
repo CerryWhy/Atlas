@@ -23,12 +23,13 @@ Uso:  python -m pipeline.03_load_ontologies
 
 import csv
 import json
+import re
 import sqlite3
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from pipeline.lib import bp3d, config, db, obo, owl, wikidata
+from pipeline.lib import bp3d, config, db, laterality, obo, owl, wikidata
 
 # Figli diretti di "human body" nell'albero BodyParts3D che sono sistemi → chiave `system`.
 # Gli ID vengono dal file; la chiave è una nostra etichetta di classificazione.
@@ -48,6 +49,7 @@ SYSTEM_ROOTS = {
 }
 
 HPO_SITE_RELATIONS = {"inheres_in", "inheres_in_part_of"}
+BILATERAL_WORD = re.compile(r"\bbilateral(ly)?\b", re.IGNORECASE)
 MONDO_SITE_RELATIONS = {
     "disease_has_location",
     "disease_has_inflammation_site",
@@ -117,6 +119,7 @@ def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, .
             else None
         )
         equivalents = cls.equivalents if cls else {}
+        label_en = ((cls.preferred_name or cls.label) if cls else None) or bp_label
         # nome italiano: prima FMA, poi Wikidata (solo legami uno a uno, vedi wikidata.py)
         it_fma = next(iter(equivalents.get("Italian", [])), None)
         it_wd = wd_labels.get(fma_id)
@@ -130,11 +133,12 @@ def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, .
         rows.append(
             {
                 "fma_id": fma_id,
-                "label_en": ((cls.preferred_name or cls.label) if cls else None) or bp_label,
+                "label_en": label_en,
                 "label_la": next(iter(equivalents.get("Latin", [])), None),
                 "label_it": label_it,
                 "label_it_source": it_source,
                 "label_it_ref": it_ref,
+                "sided": int(laterality.unsided_name(label_en) is not None),
                 "parent_fma_id": parent,
                 "system": system,
                 "region": region,
@@ -162,9 +166,25 @@ def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, .
 
 
 # ─── phenotype ──────────────────────────────────────────────────────────────
+def bilateral_ids(terms: list[obo.Term]) -> set[str]:
+    """Fenotipi che HPO dichiara bilaterali: il nome contiene la parola "bilateral",
+    oppure la definizione logica usa il modificatore "Bilateral" (cercato per nome nel
+    file, non scritto qui: I5). Un fenotipo bilaterale non descrive una struttura con
+    un solo lato ("Right kidney" non ha una "Bilateral renal agenesis")."""
+    modifiers = {t.id for t in terms if t.name.strip().lower() == "bilateral"}
+    return {
+        t.id
+        for t in terms
+        if BILATERAL_WORD.search(t.name) or any(target in modifiers for _, target in t.relations)
+    }
+
+
 def load_phenotypes(conn: sqlite3.Connection) -> set[str]:
     terms = [t for t in obo.iter_terms(config.HPO_OBO) if t.id.startswith("HP:") and not t.obsolete]
-    db.upsert_phenotypes(conn, [(t.id, t.name, t.definition) for t in terms])
+    bilateral = bilateral_ids(terms)
+    db.upsert_phenotypes(
+        conn, [(t.id, t.name, t.definition, int(t.id in bilateral)) for t in terms]
+    )
     links = {
         (t.id, target)
         for t in terms
@@ -172,7 +192,10 @@ def load_phenotypes(conn: sqlite3.Connection) -> set[str]:
         if rel in HPO_SITE_RELATIONS and target.startswith("UBERON:")
     }
     db.replace_phenotype_structure(conn, sorted(links))
-    print(f"  phenotype: {len(terms)} termini, {len(links)} legami fenotipo → sede")
+    print(
+        f"  phenotype: {len(terms)} termini ({len(bilateral)} bilaterali),"
+        f" {len(links)} legami fenotipo → sede"
+    )
     return {t.id for t in terms}
 
 

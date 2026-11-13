@@ -66,6 +66,11 @@ scaricati finisce in `unmapped` (invariante I5). **Dopo ogni esecuzione vanno le
   `ISA_MAX_HOPS` passi e antenati con al più `ISA_MAX_DESCENDANTS` sottoclassi, per non
   arrivare a "Organ". La scheda dice che le voci valgono per la classe generale e cita
   FMA. Limiti da tarare leggendo `data/reports/is_a_links.md`.
+- **Fenotipi bilaterali.** Un fenotipo che HPO dichiara bilaterale (nome con la parola
+  "bilateral", o modificatore "Bilateral" nella definizione logica) non compare sulle
+  strutture con un solo lato: "Right kidney" eredita da "kidney", ma non la "Bilateral
+  renal agenesis". `phenotype.bilateral` e `structure.sided` li marca 03; il filtro è in
+  `api/queries.py`.
 - **Nomi italiani.** Da FMA quando li ha; altrimenti dall'etichetta italiana della voce
   Wikidata con lo stesso FMA ID (P1402, dati CC0), solo se il legame è uno a uno
   (`pipeline/lib/wikidata.py`). `structure.label_it_source` dice da dove viene; la

@@ -37,14 +37,16 @@ def diseases_for_structure(conn: sqlite3.Connection, fma_id: str) -> list[sqlite
 
 def phenotypes_for_structure(conn: sqlite3.Connection, fma_id: str) -> list[sqlite3.Row]:
     """Fenotipi HPO la cui definizione logica ha sede nella struttura, una riga per
-    percorso (legame esatto prima)."""
+    percorso (legame esatto prima). Un fenotipo bilaterale non vale per una struttura
+    con un solo lato (lo marcano entrambi la pipeline: phenotype.bilateral, structure.sided)."""
     return conn.execute(
         """
         SELECT p.hpo_id, p.label, su.basis, su.uberon_id
         FROM structure_uberon su
+        JOIN structure s ON s.fma_id = su.fma_id
         JOIN phenotype_structure ps ON ps.uberon_id = su.uberon_id
         JOIN phenotype p ON p.hpo_id = ps.hpo_id
-        WHERE su.fma_id = ?
+        WHERE su.fma_id = ? AND NOT (s.sided = 1 AND p.bilateral = 1)
         ORDER BY p.label, p.hpo_id, su.basis <> 'xref', su.uberon_id
         """,
         (fma_id,),
@@ -57,9 +59,11 @@ def inherited_links(conn: sqlite3.Connection, fma_id: str) -> list[sqlite3.Row]:
         """
         SELECT su.uberon_id, su.basis, su.via_id, su.via_label, su.unsided_label,
                EXISTS (SELECT 1 FROM disease_structure ds WHERE ds.uberon_id = su.uberon_id)
-               OR EXISTS (SELECT 1 FROM phenotype_structure ps WHERE ps.uberon_id = su.uberon_id)
-                 AS carries_content
-        FROM structure_uberon su
+               OR EXISTS (
+                 SELECT 1 FROM phenotype_structure ps JOIN phenotype p ON p.hpo_id = ps.hpo_id
+                 WHERE ps.uberon_id = su.uberon_id AND NOT (s.sided = 1 AND p.bilateral = 1)
+               ) AS carries_content
+        FROM structure_uberon su JOIN structure s ON s.fma_id = su.fma_id
         WHERE su.fma_id = ? AND su.basis <> 'xref' ORDER BY su.uberon_id
         """,
         (fma_id,),

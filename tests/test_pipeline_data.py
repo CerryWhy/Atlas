@@ -212,6 +212,18 @@ def test_italian_names_declare_their_source(conn: sqlite3.Connection) -> None:
     assert no_name == 0
 
 
+def test_bilateral_phenotypes_and_sided_structures_are_marked(conn: sqlite3.Connection) -> None:
+    """Il filtro "bilaterale ≠ un solo lato" funziona solo se la pipeline marca entrambi."""
+    assert scalar(conn, "SELECT COUNT(*) FROM phenotype WHERE bilateral = 1") > 50
+    assert scalar(conn, "SELECT COUNT(*) FROM structure WHERE sided = 1") > 100
+    unsided = scalar(
+        conn,
+        "SELECT COUNT(*) FROM structure WHERE sided = 1"
+        " AND lower(label_en) NOT LIKE 'right %' AND lower(label_en) NOT LIKE 'left %'",
+    )
+    assert unsided == 0
+
+
 def test_uberon_route_does_not_widen_the_structure(conn: sqlite3.Connection) -> None:
     """Regressione: UBERON usa "left eye" come xref di "Left eyeball"; risalendo is_a si
     arriverebbe a "eye" (occhio intero, annessi compresi), che non è il bulbo."""
