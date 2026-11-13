@@ -167,6 +167,15 @@ def get_structure(conn: Conn, fma_id: Annotated[str, Path(pattern=FMA_PATTERN)])
             f"FMA: {row['label_en']}",
         )
     ]
+    if row["label_it_source"] == "wikidata" and row["label_it_ref"]:
+        citations.append(
+            _release_citation(
+                conn,
+                "wikidata",
+                f"https://www.wikidata.org/wiki/{row['label_it_ref']}",
+                f"Wikidata: nome italiano «{row['label_it']}» ({row['label_it_ref']})",
+            )
+        )
     if row["uberon_id"]:
         citations.append(
             _release_citation(

@@ -1,5 +1,6 @@
-// Nomi mostrati all'utente. Le etichette italiane arrivano da FMA quando esistono;
-// altrimenti si mostra il nome inglese (non si traduce a mano: I5).
+// Nomi mostrati all'utente. Le etichette italiane arrivano da FMA o, dove FMA non le ha,
+// da Wikidata (voce con lo stesso FMA ID, citata nella scheda); altrimenti si mostra il
+// nome inglese (non si traduce a mano: I5).
 
 type Named = { label_en: string; label_it?: string | null };
 

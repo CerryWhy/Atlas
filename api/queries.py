@@ -6,7 +6,8 @@ import sqlite3
 def get_structure(conn: sqlite3.Connection, fma_id: str) -> sqlite3.Row | None:
     row: sqlite3.Row | None = conn.execute(
         """
-        SELECT fma_id, label_en, label_la, label_it, uberon_id, parent_fma_id,
+        SELECT fma_id, label_en, label_la, label_it, label_it_source, label_it_ref,
+               uberon_id, parent_fma_id,
                system, region, depth, mesh_file, mesh_node, cx, cy, cz, radius
         FROM structure WHERE fma_id = ?
         """,

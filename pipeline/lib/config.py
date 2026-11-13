@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlencode
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
@@ -33,6 +34,17 @@ ICD11_TABULATION = ICD11_DIR / "SimpleTabulation-ICD-11-MMS-en.txt"
 ICD11_RELEASE_FILE = ICD11_DIR / "RELEASE"
 
 GEOMETRY_JSON = BUILD / "geometry.json"
+
+# Nomi italiani: voci Wikidata con un FMA ID (P1402) e la loro etichetta italiana.
+# Dati Wikidata: CC0 1.0. Vedi pipeline/lib/wikidata.py per le regole di accettazione.
+WIKIDATA_DIR = RAW / "wikidata"
+WIKIDATA_LABELS_IT = WIKIDATA_DIR / "fma_labels_it.json"
+WIKIDATA_QUERY = """
+SELECT ?item ?fma ?label WHERE {
+  ?item wdt:P1402 ?fma .
+  OPTIONAL { ?item rdfs:label ?label . FILTER(LANG(?label) = "it") }
+}
+"""
 
 
 # ─── Regioni ────────────────────────────────────────────────────────────────
@@ -96,6 +108,11 @@ SOURCES: list[Source] = [
         ICD11_ZIP,
         f"https://icdcdn.who.int/static/releasefiles/{ICD11_RELEASE}/"
         "SimpleTabulation-ICD-11-MMS-en.zip",
+    ),
+    Source(
+        WIKIDATA_LABELS_IT,
+        "https://query.wikidata.org/sparql?"
+        + urlencode({"format": "json", "query": " ".join(WIKIDATA_QUERY.split())}),
     ),
 ]
 

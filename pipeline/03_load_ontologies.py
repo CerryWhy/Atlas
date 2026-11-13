@@ -3,7 +3,8 @@
 Cosa viene da dove:
 - structure           BodyParts3D (concetti, albero PART-OF derivato da FMA) + FMA 5.x
                       (nome preferito, equivalenti latino/italiano con lingua dichiarata)
-                      + geometria calcolata da 02 (data/build/geometry.json).
+                      + geometria calcolata da 02 (data/build/geometry.json)
+                      + nomi italiani da Wikidata dove FMA non li ha (P1402, uno a uno).
 - phenotype           HPO (hp-full.obo).
 - phenotype_structure definizioni logiche HPO: inheres_in / inheres_in_part_of → UBERON.
 - disease             MONDO; icd11_code dall'xref equivalente icd11.foundation risolto
@@ -25,8 +26,9 @@ import json
 import sqlite3
 import sys
 from collections import Counter, defaultdict
+from pathlib import Path
 
-from pipeline.lib import bp3d, config, db, obo, owl
+from pipeline.lib import bp3d, config, db, obo, owl, wikidata
 
 # Figli diretti di "human body" nell'albero BodyParts3D che sono sistemi → chiave `system`.
 # Gli ID vengono dal file; la chiave è una nostra etichetta di classificazione.
@@ -82,6 +84,7 @@ def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, .
     geo: dict[str, dict[str, float | str]] = geometry["concepts"]
 
     fma, fma_version, fma_part_of = owl.read_fma(config.FMA_OWL, set(tree.labels))
+    wd_labels, wd_stats = wikidata.parse_sparql(config.WIKIDATA_LABELS_IT)
     unmapped: list[tuple[object, ...]] = []
     rows: list[dict[str, object]] = []
     for fma_id, bp_label in tree.labels.items():
@@ -114,12 +117,24 @@ def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, .
             else None
         )
         equivalents = cls.equivalents if cls else {}
+        # nome italiano: prima FMA, poi Wikidata (solo legami uno a uno, vedi wikidata.py)
+        it_fma = next(iter(equivalents.get("Italian", [])), None)
+        it_wd = wd_labels.get(fma_id)
+        label_it, it_source, it_ref = (
+            (it_fma, "fma", None)
+            if it_fma
+            else (it_wd.label, "wikidata", it_wd.qid)
+            if it_wd
+            else (None, None, None)
+        )
         rows.append(
             {
                 "fma_id": fma_id,
                 "label_en": ((cls.preferred_name or cls.label) if cls else None) or bp_label,
                 "label_la": next(iter(equivalents.get("Latin", [])), None),
-                "label_it": next(iter(equivalents.get("Italian", [])), None),
+                "label_it": label_it,
+                "label_it_source": it_source,
+                "label_it_ref": it_ref,
                 "parent_fma_id": parent,
                 "system": system,
                 "region": region,
@@ -137,6 +152,12 @@ def load_structures(conn: sqlite3.Connection) -> tuple[str, list[tuple[object, .
     db.upsert_structures(conn, rows)
     per_region = Counter(str(r["region"]) for r in rows if r["region"])
     print(f"  structure: {len(rows)} concetti; per regione: {dict(sorted(per_region.items()))}")
+    it_by_source = Counter(str(r["label_it_source"]) for r in rows if r["label_it_source"])
+    print(
+        f"  nomi italiani: {dict(sorted(it_by_source.items()))} su {len(rows)};"
+        f" Wikidata scartati per ambiguità: {wd_stats.fma_on_many_items} FMA su più voci,"
+        f" {wd_stats.item_with_many_fma} voci con più FMA"
+    )
     return fma_version, unmapped
 
 
@@ -279,6 +300,12 @@ def hpoa_version() -> str:
     raise LookupError("phenotype.hpoa senza #version")
 
 
+def retrieved(path: Path) -> str:
+    """Data di download dal MANIFEST di 01: per una query live è l'unica versione."""
+    manifest = json.loads(config.MANIFEST.read_text("utf-8"))
+    return str(manifest[path.relative_to(config.RAW).as_posix()]["retrieved"])
+
+
 def register_sources(conn: sqlite3.Connection, fma_version: str) -> None:
     def lic(path: object) -> str:
         return LICENSES[obo.license_url(path)]  # type: ignore[arg-type]
@@ -358,6 +385,14 @@ def register_sources(conn: sqlite3.Connection, fma_version: str) -> None:
             "CC BY-ND 3.0 IGO",  # documento WHO icd11-license.pdf
             f"ICD-11 MMS {icd}, World Health Organization, licensed under CC BY-ND 3.0 IGO. "
             "Codes reproduced without modification.",
+        ),
+        (
+            "wikidata",
+            "Wikidata (Italian labels of items with an FMA ID, P1402)",
+            retrieved(config.WIKIDATA_LABELS_IT),
+            "https://www.wikidata.org/wiki/Property:P1402",
+            "CC0 1.0",  # https://www.wikidata.org/wiki/Wikidata:Licensing (dati strutturati)
+            "Italian anatomical names from Wikidata, available under CC0 1.0.",
         ),
     ]
     for s in sources:

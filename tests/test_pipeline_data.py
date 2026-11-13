@@ -157,7 +157,8 @@ def test_inherited_links_are_sided_variants(conn: sqlite3.Connection) -> None:
     rows = conn.execute(
         """
         SELECT s.label_en, su.basis, su.via_label FROM structure_uberon su
-        JOIN structure s USING (fma_id) WHERE su.basis <> 'xref'
+        JOIN structure s USING (fma_id)
+        WHERE su.basis IN ('fma_laterality', 'uberon_laterality')
         """
     ).fetchall()
     assert rows, "l'ereditarietà destra/sinistra non ha prodotto legami"
@@ -166,6 +167,49 @@ def test_inherited_links_are_sided_variants(conn: sqlite3.Connection) -> None:
             assert unsided_name(label) == via_label.strip().lower(), (label, via_label)
         else:  # uberon_laterality: via_label è il termine UBERON con lato
             assert unsided_name(via_label) is not None, (label, via_label)
+
+
+def test_is_a_links_only_fill_structures_without_content(conn: sqlite3.Connection) -> None:
+    """'fma_is_a' sostituisce i contenuti mancanti, non si somma a quelli specifici; e
+    dichiara sempre l'antenato FMA da cui eredita."""
+    clashing = scalar(
+        conn,
+        """
+        WITH clin AS (
+          SELECT uberon_id FROM disease_structure UNION SELECT uberon_id FROM phenotype_structure
+        )
+        SELECT COUNT(DISTINCT a.fma_id) FROM structure_uberon a
+        JOIN structure_uberon b ON b.fma_id = a.fma_id AND b.basis <> 'fma_is_a'
+        JOIN clin ON clin.uberon_id = b.uberon_id
+        WHERE a.basis = 'fma_is_a'
+        """,
+    )
+    assert clashing == 0
+    bad_via = scalar(
+        conn,
+        "SELECT COUNT(*) FROM structure_uberon WHERE basis = 'fma_is_a'"
+        " AND (via_id NOT LIKE 'FMA:%' OR via_id = fma_id OR via_label IS NULL)",
+    )
+    assert bad_via == 0
+
+
+def test_italian_names_declare_their_source(conn: sqlite3.Connection) -> None:
+    """Un nome italiano viene da FMA o da una voce Wikidata citabile (I2)."""
+    bad = scalar(
+        conn,
+        """
+        SELECT COUNT(*) FROM structure WHERE label_it IS NOT NULL AND NOT (
+          label_it_source = 'fma' AND label_it_ref IS NULL
+          OR label_it_source = 'wikidata' AND label_it_ref GLOB 'Q[0-9]*'
+        )
+        """,
+    )
+    assert bad == 0
+    no_name = scalar(
+        conn,
+        "SELECT COUNT(*) FROM structure WHERE label_it IS NULL AND label_it_source IS NOT NULL",
+    )
+    assert no_name == 0
 
 
 def test_uberon_route_does_not_widen_the_structure(conn: sqlite3.Connection) -> None:

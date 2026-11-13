@@ -33,12 +33,13 @@ npm run pipeline             # tutti i passi, in ordine
 |---|---|---|
 | `npm run pipeline:fetch` | `pipeline/01_fetch_sources.py` | Scarica le fonti in `data/raw/` e registra URL, data e SHA-256 in `MANIFEST.json` |
 | `npm run pipeline:meshes` | `pipeline/02_build_meshes.py` | OBJ → GLB Draco della regione attiva, centroidi e raggi (`data/build/geometry.json`) |
-| `npm run pipeline:ontologies` | `pipeline/03_load_ontologies.py` | FMA, HPO, HPOA, MONDO, Disease Ontology, ICD-11 → tabelle |
+| `npm run pipeline:ontologies` | `pipeline/03_load_ontologies.py` | FMA, HPO, HPOA, MONDO, Disease Ontology, ICD-11, nomi italiani Wikidata → tabelle |
 | `npm run pipeline:bridge` | `pipeline/04_bridge_fma_uberon.py` | Crosswalk FMA ↔ UBERON, tabella `unmapped`, report in `data/reports/` |
 
 Ogni script è idempotente. Nessun ID viene costruito: ciò che non si trova nei file
 scaricati finisce in `unmapped` (invariante I5). **Dopo ogni esecuzione vanno letti
-`data/reports/coverage.md` e `data/reports/unmapped_<regione>.md`.**
+`data/reports/coverage.md`, `data/reports/unmapped_<regione>.md` e
+`data/reports/is_a_links.md`.**
 
 ### Scelte di Fase 1 da conoscere
 
@@ -58,6 +59,17 @@ scaricati finisce in `unmapped` (invariante I5). **Dopo ogni esecuzione vanno le
   esatto. La scheda lo dichiara e cita la relazione. Effetto sulle strutture con almeno
   una patologia o un segno: arti superiori 2 → 63, arti inferiori 3 → 57, testa
   43 → 123, torace 35 → 57, addome 52 → 66.
+- **Ereditarietà dalla classe più generale.** Se, anche con il lato, una struttura
+  non raggiunge patologie o segni, eredita quelli dell'antenato FMA più vicino
+  (catena di `subClassOf` dichiarati) il cui termine UBERON ne porta: *Right fourth
+  rib* ⊑ *Fourth rib* ⊑ *Rib* (`pipeline/lib/taxonomy.py`, basis `fma_is_a`). Al più
+  `ISA_MAX_HOPS` passi e antenati con al più `ISA_MAX_DESCENDANTS` sottoclassi, per non
+  arrivare a "Organ". La scheda dice che le voci valgono per la classe generale e cita
+  FMA. Limiti da tarare leggendo `data/reports/is_a_links.md`.
+- **Nomi italiani.** Da FMA quando li ha; altrimenti dall'etichetta italiana della voce
+  Wikidata con lo stesso FMA ID (P1402, dati CC0), solo se il legame è uno a uno
+  (`pipeline/lib/wikidata.py`). `structure.label_it_source` dice da dove viene; la
+  scheda cita la voce Wikidata.
 - **Fonte della sede.** `disease_structure.source` dice chi asserisce che una malattia
   ha sede in una struttura (MONDO o Disease Ontology); la scheda cita quella fonte.
 - **Apparato (`system`).** Dall'albero di BodyParts3D quando lo dichiara; altrimenti

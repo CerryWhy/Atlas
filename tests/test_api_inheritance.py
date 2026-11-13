@@ -1,6 +1,6 @@
 """Test dell'API su un database sintetico minimo: girano senza la pipeline.
 
-Gli ID qui sono segnaposto di test (FMA:999999x, MONDO:9999999, ...), non dati: non finiscono mai
+Gli ID qui sono segnaposto di test (FMA:999999x, Q9999999, ...), non dati: non finiscono mai
 in atlas.db.
 """
 
@@ -25,11 +25,15 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         conn.executemany(
             "INSERT INTO source_release (source, title, version, url, license, attribution)"
             " VALUES (?, ?, 'v1', 'http://example.org', 'CC BY 4.0', 'test')",
-            [(s, s.upper()) for s in ("fma", "uberon", "mondo", "hpo", "bodyparts3d")],
+            [(s, s.upper()) for s in ("fma", "uberon", "mondo", "hpo", "bodyparts3d", "wikidata")],
         )
         conn.executemany(
-            "INSERT INTO structure (fma_id, label_en, region) VALUES (?, ?, 'thorax')",
-            [("FMA:9999991", "Right fourth rib"), ("FMA:9999992", "Rib")],
+            "INSERT INTO structure (fma_id, label_en, label_it, label_it_source, label_it_ref,"
+            " region) VALUES (?, ?, ?, ?, ?, 'thorax')",
+            [
+                ("FMA:9999991", "Right fourth rib", None, None, None),
+                ("FMA:9999992", "Rib", "costola", "wikidata", "Q9999999"),
+            ],
         )
         conn.execute(
             "INSERT INTO disease (mondo_id, label) VALUES ('MONDO:9999999', 'Rib fracture')"
@@ -92,3 +96,14 @@ def test_the_ancestor_itself_is_not_marked_inherited(client: TestClient) -> None
     body = client.get("/structure/FMA:9999992").json()
     assert body["inherited_from"] == []
     assert body["diseases"] and not any(d["inherited"] for d in body["diseases"])
+
+
+def test_wikidata_name_is_cited(client: TestClient) -> None:
+    body = client.get("/structure/FMA:9999992").json()
+    assert body["label_it"] == "costola"
+    [cite] = [c for c in body["citations"] if c["source"] == "wikidata"]
+    assert cite["url"] == "https://www.wikidata.org/wiki/Q9999999"
+    assert "costola" in cite["title"]
+    # senza nome italiano non c'è citazione Wikidata
+    body = client.get("/structure/FMA:9999991").json()
+    assert not any(c["source"] == "wikidata" for c in body["citations"])
