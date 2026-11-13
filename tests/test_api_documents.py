@@ -108,3 +108,15 @@ def test_search_without_vectors_says_why(
     monkeypatch.setattr(local, "encode_query", unavailable)
     r = client.get("/search", params={"q": "fegato"})
     assert r.status_code == 503 and "vettore" in r.json()["detail"]
+
+
+def test_merge_keeps_one_hit_per_document_nearest_first() -> None:
+    hits = [
+        ("a#3", "a", 0.30),
+        ("a#0", "a", 0.10),  # titolo di "a": vince sul suo paragrafo più lontano
+        ("b#1", "b", 0.20),
+        ("c#0", "c", 0.20),
+        ("a#5", "a", 0.05),  # ...ma un paragrafo ancora più vicino vince sul titolo
+    ]
+    assert local.merge_by_document(hits, 2) == [("a#5", "a", 0.05), ("b#1", "b", 0.20)]
+    assert local.merge_by_document([], 3) == []

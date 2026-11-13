@@ -5,7 +5,9 @@
 2. I chunk senza vettore ricevono l'embedding del modello config.EMBED_MODEL, calcolato
    in locale (GPU se c'è): nessun testo esce dalla macchina (SPEC §4). Il testo passato
    al modello è "passage: <titolo del documento>. <chunk>", come vuole E5.
-3. I vettori di chunk non più esistenti vengono rimossi.
+3. Ogni documento riceve anche un vettore del solo titolo (`title_vec`): la ricerca
+   guarda titoli e chunk insieme.
+4. I vettori di chunk e documenti non più esistenti vengono rimossi.
 
 Riprendibile: salva a lotti; interrotto, riparte dai chunk ancora senza vettore.
 Cambiare modello rifà tutti i vettori.
@@ -119,9 +121,24 @@ def main() -> int:
         if args.max_minutes and time.monotonic() - started > args.max_minutes * 60:
             print("  tempo scaduto: rieseguire per continuare")
             break
+    titled = 0
+    while batch_t := vec.titles_without_vectors(conn, BATCH * 8):
+        vectors = model.encode(
+            [f"passage: {title}" for _doc, title in batch_t],
+            batch_size=64,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        with conn:
+            vec.insert_titles(
+                conn, [(doc, v.tolist()) for (doc, _t), v in zip(batch_t, vectors, strict=True)]
+            )
+        titled += len(batch_t)
+        print(f"  {titled} titoli", flush=True)
     total = conn.execute("SELECT COUNT(*) FROM chunk_vec").fetchone()[0]
+    titles = conn.execute("SELECT COUNT(*) FROM title_vec").fetchone()[0]
     conn.close()
-    print(f"OK: {total} vettori in chunk_vec")
+    print(f"OK: {total} vettori in chunk_vec, {titles} in title_vec")
     return 0
 
 

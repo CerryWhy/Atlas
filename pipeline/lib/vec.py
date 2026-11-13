@@ -1,7 +1,10 @@
 """sqlite-vec: tabella virtuale degli embedding dei chunk (SPEC §4, §6).
 
-La tabella `chunk_vec` ha chiave chunk_id e distanza coseno. `embedding_meta` ricorda
-modello e dimensione: se cambiano, i vettori vecchi non sono confrontabili e si rifanno.
+La tabella `chunk_vec` ha chiave chunk_id e distanza coseno; `title_vec` ha un vettore
+per documento, calcolato dal solo titolo: una domanda breve ("embolia polmonare")
+somiglia al titolo del capitolo giusto più che a qualunque suo paragrafo.
+`embedding_meta` ricorda modello e dimensione: se cambiano, i vettori vecchi non sono
+confrontabili e si rifanno.
 """
 
 import sqlite3
@@ -27,8 +30,8 @@ def serialize(vector: list[float]) -> bytes:
     return bytes(sqlite_vec.serialize_float32(vector))
 
 
-def has_table(conn: sqlite3.Connection) -> bool:
-    row = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'chunk_vec'").fetchone()
+def has_table(conn: sqlite3.Connection, name: str = "chunk_vec") -> bool:
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (name,)).fetchone()
     return row is not None
 
 
@@ -38,12 +41,13 @@ def ensure(conn: sqlite3.Connection, model: str, dim: int) -> bool:
     conn.executescript(META)
     row = conn.execute("SELECT model, dim FROM embedding_meta WHERE id = 1").fetchone()
     reset = row is not None and (row[0], row[1]) != (model, dim)
-    if reset or not has_table(conn):
-        conn.execute("DROP TABLE IF EXISTS chunk_vec")
-        conn.execute(
-            f"CREATE VIRTUAL TABLE chunk_vec USING vec0("
-            f"chunk_id TEXT PRIMARY KEY, embedding float[{dim}] distance_metric=cosine)"
-        )
+    for table, key in (("chunk_vec", "chunk_id"), ("title_vec", "doc_id")):
+        if reset or not has_table(conn, table):
+            conn.execute(f"DROP TABLE IF EXISTS {table}")
+            conn.execute(
+                f"CREATE VIRTUAL TABLE {table} USING vec0("
+                f"{key} TEXT PRIMARY KEY, embedding float[{dim}] distance_metric=cosine)"
+            )
     conn.execute(
         "INSERT INTO embedding_meta (id, model, dim) VALUES (1, ?, ?)"
         " ON CONFLICT(id) DO UPDATE SET model = excluded.model, dim = excluded.dim",
@@ -90,7 +94,29 @@ def delete_orphans(conn: sqlite3.Connection) -> int:
         "SELECT chunk_id FROM chunk_vec WHERE chunk_id NOT IN (SELECT chunk_id FROM chunk)"
     ).fetchall()
     conn.executemany("DELETE FROM chunk_vec WHERE chunk_id = ?", orphans)
-    return len(orphans)
+    gone = conn.execute(
+        "SELECT doc_id FROM title_vec WHERE doc_id NOT IN (SELECT doc_id FROM document)"
+    ).fetchall()
+    conn.executemany("DELETE FROM title_vec WHERE doc_id = ?", gone)
+    return len(orphans) + len(gone)
+
+
+def titles_without_vectors(conn: sqlite3.Connection, limit: int) -> list[tuple[str, str]]:
+    """(doc_id, titolo) dei documenti il cui titolo non ha ancora un vettore."""
+    return conn.execute(
+        """
+        SELECT doc_id, title FROM document
+        WHERE doc_id NOT IN (SELECT doc_id FROM title_vec) ORDER BY doc_id LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def insert_titles(conn: sqlite3.Connection, rows: list[tuple[str, list[float]]]) -> None:
+    conn.executemany(
+        "INSERT INTO title_vec (doc_id, embedding) VALUES (?, ?)",
+        [(doc_id, serialize(v)) for doc_id, v in rows],
+    )
 
 
 def insert(conn: sqlite3.Connection, rows: list[tuple[str, list[float]]]) -> None:

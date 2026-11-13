@@ -217,17 +217,44 @@ def embedding_model(conn: sqlite3.Connection) -> str | None:
     return str(row[0]) if row else None
 
 
-def nearest_chunks(conn: sqlite3.Connection, query_vec: bytes, k: int) -> list[sqlite3.Row]:
-    """I k chunk più vicini (distanza coseno) con il documento da citare."""
+def nearest_chunk_ids(conn: sqlite3.Connection, query_vec: bytes, n: int) -> list[sqlite3.Row]:
+    """(chunk_id, doc_id, distance) degli n chunk più vicini (distanza coseno)."""
     return conn.execute(
         """
         WITH hits AS (
           SELECT chunk_id, distance FROM chunk_vec WHERE embedding MATCH ? AND k = ?
         )
-        SELECT h.chunk_id, h.distance, c.doc_id, c.text,
-               d.source, d.title, d.url, d.license, d.retrieved
-        FROM hits h JOIN chunk c USING (chunk_id) JOIN document d ON d.doc_id = c.doc_id
-        ORDER BY h.distance
+        SELECT h.chunk_id, c.doc_id, h.distance FROM hits h JOIN chunk c USING (chunk_id)
         """,
-        (query_vec, k),
+        (query_vec, n),
+    ).fetchall()
+
+
+def nearest_title_docs(conn: sqlite3.Connection, query_vec: bytes, n: int) -> list[sqlite3.Row]:
+    """(chunk_id del primo chunk, doc_id, distance) degli n documenti dal titolo più
+    vicino. Nessuna riga se 07 non ha ancora calcolato i vettori dei titoli."""
+    try:
+        return conn.execute(
+            """
+            WITH hits AS (
+              SELECT doc_id, distance FROM title_vec WHERE embedding MATCH ? AND k = ?
+            )
+            SELECT c.chunk_id, h.doc_id, h.distance
+            FROM hits h JOIN chunk c ON c.doc_id = h.doc_id AND c.ordinal = 0
+            """,
+            (query_vec, n),
+        ).fetchall()
+    except sqlite3.OperationalError:  # title_vec non esiste (indice fatto prima dei titoli)
+        return []
+
+
+def chunks_with_documents(conn: sqlite3.Connection, chunk_ids: list[str]) -> list[sqlite3.Row]:
+    """I chunk indicati con il documento da citare."""
+    marks = ",".join("?" * len(chunk_ids))
+    return conn.execute(
+        f"""
+        SELECT c.chunk_id, c.doc_id, c.text, d.source, d.title, d.url, d.license, d.retrieved
+        FROM chunk c JOIN document d ON d.doc_id = c.doc_id WHERE c.chunk_id IN ({marks})
+        """,
+        chunk_ids,
     ).fetchall()
