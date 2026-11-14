@@ -7,7 +7,13 @@
    al modello è "passage: <titolo del documento>. <chunk>", come vuole E5.
 3. Ogni documento riceve anche un vettore del solo titolo (`title_vec`): la ricerca
    guarda titoli e chunk insieme.
-4. I vettori di chunk e documenti non più esistenti vengono rimossi.
+4. Ogni fenotipo HPO che /locate può usare (ha un legame a una struttura, calcolato da
+   04) riceve un vettore per il nome e per ciascun sinonimo (`phenotype_vec`): i
+   sinonimi di HPO comprendono le forme in linguaggio comune ("Blood in urine"). Qui il
+   prefisso E5 è "query: " anche per i nomi: domanda e nome sono frasi brevi da
+   confrontare tra loro, il caso simmetrico per cui la scheda del modello lo prescrive.
+   Modello proprio, config.LOCATE_MODEL (più grande: vedi il commento in config).
+5. I vettori di chunk, documenti e fenotipi non più esistenti vengono rimossi.
 
 Riprendibile: salva a lotti; interrotto, riparte dai chunk ancora senza vettore.
 Cambiare modello rifà tutti i vettori.
@@ -44,6 +50,7 @@ def make_chunks(conn: sqlite3.Connection, sources: set[str] | None) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=config.EMBED_MODEL)
+    parser.add_argument("--locate-model", default=config.LOCATE_MODEL)
     parser.add_argument("--device", default=None, help="cuda | cpu (predefinito: automatico)")
     parser.add_argument("--sources", default="", help="solo queste fonti, separate da virgola")
     parser.add_argument("--max-minutes", type=float, default=0, help="fermati dopo N minuti")
@@ -140,10 +147,41 @@ def main() -> int:
         if args.max_minutes and time.monotonic() - started > args.max_minutes * 60:
             print("  tempo scaduto: rieseguire per continuare")
             break
+    with conn:
+        names = db.phenotypes_to_embed(conn)
+    if names:
+        locate_model = (
+            model
+            if args.locate_model == args.model
+            else SentenceTransformer(args.locate_model, device=args.device)
+        )
+        get_ldim = (
+            getattr(locate_model, "get_embedding_dimension", None)
+            or locate_model.get_sentence_embedding_dimension
+        )
+        with conn:
+            if vec.ensure_phenotypes(conn, args.locate_model, int(get_ldim() or 0)):
+                print("  modello dei fenotipi cambiato: vettori precedenti rimossi")
+            todo = vec.phenotypes_to_refresh(conn, names)
+        print(f"  fenotipi: modello {args.locate_model}; nomi da indicizzare {len(todo)}")
+        for i in range(0, len(todo), BATCH * 8):
+            part_p = todo[i : i + BATCH * 8]
+            vectors = locate_model.encode(
+                [f"query: {text}" for _h, text in part_p],
+                batch_size=64,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )
+            with conn:
+                vec.insert_phenotypes(
+                    conn, [(h, t, v.tolist()) for (h, t), v in zip(part_p, vectors, strict=True)]
+                )
+            print(f"  {i + len(part_p)} nomi di fenotipo", flush=True)
     total = conn.execute("SELECT COUNT(*) FROM chunk_vec").fetchone()[0]
     titles = conn.execute("SELECT COUNT(*) FROM title_vec").fetchone()[0]
+    phenos = conn.execute("SELECT COUNT(*) FROM phenotype_vec").fetchone()[0]
     conn.close()
-    print(f"OK: {total} vettori in chunk_vec, {titles} in title_vec")
+    print(f"OK: {total} vettori in chunk_vec, {titles} in title_vec, {phenos} in phenotype_vec")
     return 0
 
 

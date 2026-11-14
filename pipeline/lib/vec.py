@@ -22,6 +22,18 @@ CREATE TABLE IF NOT EXISTS title_vec_src (
   doc_id TEXT PRIMARY KEY,
   title  TEXT NOT NULL
 );
+-- modello e dimensione dei vettori dei fenotipi (un modello diverso da embedding_meta)
+CREATE TABLE IF NOT EXISTS phenotype_vec_meta (
+  id    INTEGER PRIMARY KEY CHECK (id = 1),
+  model TEXT NOT NULL,
+  dim   INTEGER NOT NULL
+);
+-- il nome (nome HPO o un sinonimo) da cui è stato calcolato ogni vettore di phenotype_vec;
+-- chiave '<hpo_id>#<n>', un vettore per nome
+CREATE TABLE IF NOT EXISTS phenotype_vec_src (
+  name_id TEXT PRIMARY KEY,
+  text    TEXT NOT NULL
+);
 """
 
 
@@ -40,27 +52,40 @@ def has_table(conn: sqlite3.Connection, name: str = "chunk_vec") -> bool:
     return row is not None
 
 
-def ensure(conn: sqlite3.Connection, model: str, dim: int) -> bool:
-    """Crea (o ricrea, se il modello è cambiato) la tabella dei vettori.
-    Restituisce True se i vettori esistenti sono stati buttati."""
+def _ensure(
+    conn: sqlite3.Connection, meta: str, tables: tuple[tuple[str, str], ...], model: str, dim: int
+) -> bool:
     conn.executescript(META)
-    row = conn.execute("SELECT model, dim FROM embedding_meta WHERE id = 1").fetchone()
+    row = conn.execute(f"SELECT model, dim FROM {meta} WHERE id = 1").fetchone()
     reset = row is not None and (row[0], row[1]) != (model, dim)
-    for table, key in (("chunk_vec", "chunk_id"), ("title_vec", "doc_id")):
+    for table, key in tables:
         if reset or not has_table(conn, table):
             conn.execute(f"DROP TABLE IF EXISTS {table}")
-            if table == "title_vec":
-                conn.execute("DELETE FROM title_vec_src")
+            if table in ("title_vec", "phenotype_vec"):
+                conn.execute(f"DELETE FROM {table}_src")
             conn.execute(
                 f"CREATE VIRTUAL TABLE {table} USING vec0("
                 f"{key} TEXT PRIMARY KEY, embedding float[{dim}] distance_metric=cosine)"
             )
     conn.execute(
-        "INSERT INTO embedding_meta (id, model, dim) VALUES (1, ?, ?)"
+        f"INSERT INTO {meta} (id, model, dim) VALUES (1, ?, ?)"
         " ON CONFLICT(id) DO UPDATE SET model = excluded.model, dim = excluded.dim",
         (model, dim),
     )
     return reset
+
+
+def ensure(conn: sqlite3.Connection, model: str, dim: int) -> bool:
+    """Crea (o ricrea, se il modello è cambiato) le tabelle dei vettori di chunk e titoli.
+    Restituisce True se i vettori esistenti sono stati buttati."""
+    return _ensure(
+        conn, "embedding_meta", (("chunk_vec", "chunk_id"), ("title_vec", "doc_id")), model, dim
+    )
+
+
+def ensure_phenotypes(conn: sqlite3.Connection, model: str, dim: int) -> bool:
+    """Come ensure, per i vettori dei nomi di fenotipo (modello proprio: config.LOCATE_MODEL)."""
+    return _ensure(conn, "phenotype_vec_meta", (("phenotype_vec", "name_id"),), model, dim)
 
 
 def chunks_without_vectors(
@@ -152,4 +177,29 @@ def insert(conn: sqlite3.Connection, rows: list[tuple[str, list[float]]]) -> Non
     conn.executemany(
         "INSERT INTO chunk_vec (chunk_id, embedding) VALUES (?, ?)",
         [(cid, serialize(v)) for cid, v in rows],
+    )
+
+
+def phenotypes_to_refresh(
+    conn: sqlite3.Connection, wanted: list[tuple[str, str]]
+) -> list[tuple[str, str]]:
+    """Dei nomi di fenotipo da indicizzare (name_id, nome), quelli senza vettore o con un
+    nome cambiato; toglie i vettori dei nomi non più indicizzati o cambiati."""
+    have = dict(conn.execute("SELECT name_id, text FROM phenotype_vec_src").fetchall())
+    want = dict(wanted)
+    stale = [h for h, t in have.items() if want.get(h) != t]
+    conn.executemany("DELETE FROM phenotype_vec WHERE name_id = ?", [(h,) for h in stale])
+    conn.executemany("DELETE FROM phenotype_vec_src WHERE name_id = ?", [(h,) for h in stale])
+    return [(h, t) for h, t in wanted if have.get(h) != t]
+
+
+def insert_phenotypes(conn: sqlite3.Connection, rows: list[tuple[str, str, list[float]]]) -> None:
+    """rows = (name_id, nome usato, vettore)."""
+    conn.executemany(
+        "INSERT INTO phenotype_vec (name_id, embedding) VALUES (?, ?)",
+        [(h, serialize(v)) for h, _t, v in rows],
+    )
+    conn.executemany(
+        "INSERT OR REPLACE INTO phenotype_vec_src (name_id, text) VALUES (?, ?)",
+        [(h, t) for h, t, _v in rows],
     )

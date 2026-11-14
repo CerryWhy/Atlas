@@ -208,10 +208,13 @@ def documents_for_structure(conn: sqlite3.Connection, fma_id: str, limit: int) -
     ).fetchall()
 
 
-def embedding_model(conn: sqlite3.Connection) -> str | None:
-    """Il modello con cui 07 ha calcolato i vettori (la query va codificata con lo stesso)."""
+def embedding_model(conn: sqlite3.Connection, meta: str = "embedding_meta") -> str | None:
+    """Il modello con cui 07 ha calcolato i vettori (la query va codificata con lo stesso):
+    'embedding_meta' per chunk e titoli, 'phenotype_vec_meta' per i fenotipi."""
+    if meta not in ("embedding_meta", "phenotype_vec_meta"):
+        raise ValueError(meta)
     try:
-        row = conn.execute("SELECT model FROM embedding_meta WHERE id = 1").fetchone()
+        row = conn.execute(f"SELECT model FROM {meta} WHERE id = 1").fetchone()
     except sqlite3.OperationalError:
         return None
     return str(row[0]) if row else None
@@ -284,4 +287,45 @@ def chunks_with_documents(conn: sqlite3.Connection, chunk_ids: list[str]) -> lis
         FROM chunk c JOIN document d ON d.doc_id = c.doc_id WHERE c.chunk_id IN ({marks})
         """,
         chunk_ids,
+    ).fetchall()
+
+
+def nearest_phenotypes(
+    conn: sqlite3.Connection, query_vec: bytes, n: int
+) -> list[tuple[str, float]]:
+    """(hpo_id, distanza) degli n fenotipi più vicini: per ciascuno conta il più vicino
+    tra il nome e i sinonimi. Nessuno se 07 non li ha indicizzati."""
+    try:
+        rows = conn.execute(
+            "SELECT name_id, distance FROM phenotype_vec WHERE embedding MATCH ? AND k = ?",
+            (query_vec, n * 4),
+        ).fetchall()
+    except sqlite3.OperationalError:  # phenotype_vec non esiste ancora
+        return []
+    best: dict[str, float] = {}
+    for r in rows:
+        hpo = str(r["name_id"]).split("#", 1)[0]
+        best.setdefault(hpo, float(r["distance"]))  # righe già in ordine di distanza
+    return sorted(best.items(), key=lambda x: (x[1], x[0]))[:n]
+
+
+def phenotype_loci(conn: sqlite3.Connection, hpo_ids: list[str]) -> list[sqlite3.Row]:
+    """Legami fenotipo → struttura (04), con nomi del fenotipo, di chi dichiara la sede
+    e della struttura."""
+    if not hpo_ids:
+        return []
+    marks = ",".join("?" * len(hpo_ids))
+    return conn.execute(
+        f"""
+        SELECT l.hpo_id, p.label AS hpo_label, l.fma_id, l.uberon_id, l.basis, l.via_hpo,
+               v.label AS via_label, l.hops,
+               s.label_en, s.label_it, s.cx, s.cy, s.cz, s.radius
+        FROM phenotype_locus l
+        JOIN phenotype p ON p.hpo_id = l.hpo_id
+        JOIN phenotype v ON v.hpo_id = l.via_hpo
+        JOIN structure s ON s.fma_id = l.fma_id
+        WHERE l.hpo_id IN ({marks})
+        ORDER BY l.hpo_id, l.hops, l.fma_id
+        """,
+        hpo_ids,
     ).fetchall()

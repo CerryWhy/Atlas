@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS phenotype (
   hpo_id     TEXT PRIMARY KEY,
   label      TEXT NOT NULL,
   definition TEXT,
-  bilateral  INTEGER NOT NULL DEFAULT 0   -- 1 se HPO lo dichiara bilaterale (vedi 03)
+  bilateral  INTEGER NOT NULL DEFAULT 0,  -- 1 se HPO lo dichiara bilaterale (vedi 03)
+  synonyms   TEXT                         -- sinonimi EXACT, separati da " | " (per /locate)
 );
 
 CREATE TABLE IF NOT EXISTS disease (
@@ -95,6 +96,20 @@ CREATE TABLE IF NOT EXISTS disease_structure (
 
 CREATE INDEX IF NOT EXISTS idx_disease_structure_uberon ON disease_structure(uberon_id);
 CREATE INDEX IF NOT EXISTS idx_disease_phenotype_hpo ON disease_phenotype(hpo_id);
+
+-- Estensione (Fase 5): fenotipo → struttura in scena, per /locate. Calcolata da 04
+-- (pipeline/lib/phenosite.py): sede dichiarata ('logical') o ereditata dall'antenato
+-- HPO più vicino ('inherited', via_hpo), poi la struttura legata alla sede o il "tutto"
+-- più vicino risalendo part_of di UBERON. hops = passi is_a + passi part_of.
+CREATE TABLE IF NOT EXISTS phenotype_locus (
+  hpo_id    TEXT NOT NULL REFERENCES phenotype(hpo_id),
+  fma_id    TEXT NOT NULL REFERENCES structure(fma_id),
+  uberon_id TEXT NOT NULL,
+  basis     TEXT NOT NULL CHECK (basis IN ('logical', 'inherited')),
+  via_hpo   TEXT NOT NULL,
+  hops      INTEGER NOT NULL,
+  PRIMARY KEY (hpo_id, fma_id)
+);
 
 CREATE TABLE IF NOT EXISTS document (
   doc_id     TEXT PRIMARY KEY,
@@ -183,7 +198,7 @@ _ADDED_COLUMNS = {
         ("sided", "INTEGER NOT NULL DEFAULT 0"),
         ("tissue", "TEXT"),
     ],
-    "phenotype": [("bilateral", "INTEGER NOT NULL DEFAULT 0")],
+    "phenotype": [("bilateral", "INTEGER NOT NULL DEFAULT 0"), ("synonyms", "TEXT")],
     "document": [("text_sha256", "TEXT")],
     "document_structure": [("basis", "TEXT"), ("via", "TEXT")],
     "document_disease": [("basis", "TEXT"), ("via", "TEXT")],
@@ -305,9 +320,10 @@ def structure_ids(conn: sqlite3.Connection) -> list[tuple[str, str, str | None]]
 def upsert_phenotypes(conn: sqlite3.Connection, rows: Rows) -> None:
     conn.executemany(
         """
-        INSERT INTO phenotype (hpo_id, label, definition, bilateral) VALUES (?, ?, ?, ?)
+        INSERT INTO phenotype (hpo_id, label, definition, bilateral, synonyms)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(hpo_id) DO UPDATE SET label=excluded.label, definition=excluded.definition,
-          bilateral=excluded.bilateral
+          bilateral=excluded.bilateral, synonyms=excluded.synonyms
         """,
         rows,
     )
@@ -546,3 +562,40 @@ def abdominal_structures_without_documents(
         """,
         (region,),
     ).fetchall()
+
+
+def replace_phenotype_loci(conn: sqlite3.Connection, rows: Rows) -> None:
+    """rows = (hpo_id, fma_id, uberon_id, basis, via_hpo, hops)."""
+    conn.execute("DELETE FROM phenotype_locus")
+    conn.executemany(
+        "INSERT INTO phenotype_locus (hpo_id, fma_id, uberon_id, basis, via_hpo, hops)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+
+
+def phenotypes_to_embed(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    """(chiave, nome) per ogni nome dei fenotipi che /locate può usare (hanno almeno un
+    locus): il nome HPO e ciascun sinonimo EXACT, che in HPO comprendono le forme in
+    linguaggio comune ("Enlarged heart" per Cardiomegaly). Un vettore per nome: in un
+    vettore unico il sinonimo comune si diluisce tra i termini tecnici.
+    Chiave: '<hpo_id>#<n>' (0 = nome, poi i sinonimi nell'ordine del file).
+    I nomi italiani del progetto di traduzione HPO sono stati provati e peggiorano la
+    ricerca (13/20 contro 15/20 sulle frasi di prova): quasi tutti automatici, creano
+    corrispondenze su parole generiche ("ingrossato")."""
+    rows = conn.execute(
+        """
+        SELECT p.hpo_id, p.label, p.synonyms FROM phenotype p
+        WHERE EXISTS (SELECT 1 FROM phenotype_locus l WHERE l.hpo_id = p.hpo_id)
+        ORDER BY p.hpo_id
+        """
+    ).fetchall()
+    out: list[tuple[str, str]] = []
+    for hpo, label, syn in rows:
+        names = [label, *(syn.split(" | ") if syn else [])]
+        seen: set[str] = set()
+        for i, name in enumerate(names):
+            if name.lower() not in seen:
+                seen.add(name.lower())
+                out.append((f"{hpo}#{i}", name))
+    return out

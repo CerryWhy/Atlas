@@ -31,25 +31,34 @@ alle classi di config.TISSUE_CLASSES: serve ai livelli della scena, non alla cli
 Uso:  python -m pipeline.04_bridge_fma_uberon
 """
 
+import sqlite3
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 
-from pipeline.lib import config, db, laterality, obo, owl, taxonomy
+from pipeline.lib import config, db, laterality, obo, owl, phenosite, taxonomy
 
 
-def uberon_by_fma() -> tuple[dict[str, list[str]], dict[str, str], dict[str, list[str]]]:
+def uberon_by_fma() -> tuple[
+    dict[str, list[str]], dict[str, str], dict[str, list[str]], dict[str, set[str]]
+]:
+    """(FMA → UBERON per xref, nomi, is_a, part_of) dei termini UBERON."""
     by_fma: dict[str, list[str]] = defaultdict(list)
     names: dict[str, str] = {}
     is_a: dict[str, list[str]] = {}
+    part_of: dict[str, set[str]] = {}
     for t in obo.iter_terms(config.UBERON_OBO):
         if t.obsolete or not t.id.startswith("UBERON:"):
             continue
         names[t.id] = t.name
         is_a[t.id] = [p for p in t.is_a if p.startswith("UBERON:")]
+        wholes = {w for rel, w in t.relations if rel == "part_of" and w.startswith("UBERON:")}
+        if wholes:
+            part_of[t.id] = wholes
         for x in t.xrefs:
             if x.startswith("FMA:"):
                 by_fma[x].append(t.id)
-    return by_fma, names, is_a
+    return by_fma, names, is_a, part_of
 
 
 def laterality_links(
@@ -193,8 +202,41 @@ def is_a_report(
     return "\n".join(lines)
 
 
+# Come altrove (doclinks, api/queries): sotto questa profondità c'è un apparato o una
+# regione intera; la risalita part_of di una sede non ci arriva.
+MIN_TARGET_DEPTH = 3
+
+
+def phenotype_loci(
+    conn: sqlite3.Connection,
+    links: Sequence[tuple[object, ...]],
+    uberon_part_of: dict[str, set[str]],
+) -> list[phenosite.Locus]:
+    """Fenotipo → struttura per /locate (pipeline/lib/phenosite.py). Usa i legami
+    struttura ↔ UBERON esatti e con lato, non quelli dalla classe generale."""
+    is_a: dict[str, list[str]] = {}
+    relations: dict[str, list[tuple[str, str]]] = {}
+    for t in obo.iter_terms(config.HPO_OBO):
+        if t.obsolete or not t.id.startswith("HP:"):
+            continue
+        is_a[t.id] = [p for p in t.is_a if p.startswith("HP:")]
+        relations[t.id] = t.relations
+    structures_by_uberon: dict[str, set[str]] = defaultdict(set)
+    for fma, uberon, basis, *_ in links:
+        if basis != "fma_is_a":
+            structures_by_uberon[str(uberon)].add(str(fma))
+    return phenosite.loci(
+        is_a,
+        is_a,
+        phenosite.own_sites(relations),
+        structures_by_uberon,
+        uberon_part_of,
+        db.broad_structures(conn, MIN_TARGET_DEPTH),
+    )
+
+
 def main() -> int:
-    by_fma, uberon_names, uberon_is_a = uberon_by_fma()
+    by_fma, uberon_names, uberon_is_a, uberon_part_of = uberon_by_fma()
 
     conn = db.connect(config.DB_PATH)
     with conn:
@@ -230,23 +272,25 @@ def main() -> int:
         db.set_tissues(conn, tissues)
         clinical = db.clinical_uberon_ids(conn)
         is_a = is_a_links(structures, exact, inherited, by_fma, clinical, fma_names, fma_supers)
-        db.replace_structure_uberon(
-            conn,
-            [
-                *((f, u, "xref", None, None, None) for f, u in sorted(exact.items())),
-                *inherited,
-                *(
-                    (
-                        x.fma_id,
-                        x.uberon_id,
-                        "fma_is_a",
-                        x.ancestor_id,
-                        x.ancestor_label,
-                        x.ancestor_label,
-                    )
-                    for x in is_a
-                ),
-            ],
+        su_rows = [
+            *((f, u, "xref", None, None, None) for f, u in sorted(exact.items())),
+            *inherited,
+            *(
+                (
+                    x.fma_id,
+                    x.uberon_id,
+                    "fma_is_a",
+                    x.ancestor_id,
+                    x.ancestor_label,
+                    x.ancestor_label,
+                )
+                for x in is_a
+            ),
+        ]
+        db.replace_structure_uberon(conn, su_rows)
+        loci = phenotype_loci(conn, su_rows, uberon_part_of)
+        db.replace_phenotype_loci(
+            conn, [(x.hpo_id, x.fma_id, x.uberon_id, x.basis, x.via_hpo, x.hops) for x in loci]
         )
 
     all_total = len(structures)
@@ -322,6 +366,10 @@ def main() -> int:
     print(f"  corpo intero: {all_mapped}/{all_total}")
     print(f"  legami ereditati destra/sinistra: {len(inherited)}")
     print(f"  legami ereditati dalla classe più generale: {len(is_a)}")
+    print(
+        f"  fenotipo → struttura (per /locate): {len(loci)} legami,"
+        f" {len({x.hpo_id for x in loci})} fenotipi"
+    )
     by_tissue = Counter(t or "—" for t, _ in tissues)
     print(f"  tessuti (livelli della scena): {dict(sorted(by_tissue.items()))}")
     print(f"OK: report in {config.REPORTS.relative_to(config.ROOT)}")

@@ -37,8 +37,9 @@ def _model(name: str) -> Any:
     return SentenceTransformer(name)
 
 
-def encode_query(conn: sqlite3.Connection, text: str) -> bytes:
-    name = queries.embedding_model(conn)
+def encode_query(conn: sqlite3.Connection, text: str, meta: str = "embedding_meta") -> bytes:
+    """La domanda codificata con il modello dell'indice (meta: vedi queries.embedding_model)."""
+    name = queries.embedding_model(conn, meta)
     if name is None:
         raise SearchUnavailable("nessun vettore in atlas.db: eseguire pipeline/07_embed")
     vector = _model(name).encode([f"query: {text}"], normalize_embeddings=True)[0]

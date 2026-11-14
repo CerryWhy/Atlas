@@ -135,3 +135,37 @@ class SourceRelease(BaseModel):
     url: str
     license: str
     attribution: str
+
+
+class LocateRequest(BaseModel):
+    """Un segno o sintomo descritto in generale (SPEC §9: non la situazione di una persona).
+    Il testo non viene salvato né registrato (I4)."""
+
+    text: str = Field(min_length=2, max_length=300)
+
+
+class LocatedPhenotype(BaseModel):
+    """Un fenotipo HPO vicino al testo, e da dove viene la sua sede."""
+
+    hpo_id: str = Field(pattern=HPO_PATTERN)
+    label: str
+    score: float  # similarità coseno tra il testo e nome+sinonimi del fenotipo
+    basis: str  # 'logical' (sede dichiarata) | 'inherited' (da un antenato HPO)
+    via_label: str  # il fenotipo che dichiara la sede (sé stesso se 'logical')
+    citations: list[Citation] = Field(min_length=1)
+
+
+class LocatedStructure(BaseModel):
+    fma_id: str = Field(pattern=FMA_PATTERN)
+    label_en: str
+    label_it: str | None
+    centroid: tuple[float, float, float] | None
+    radius: float | None
+    mesh_nodes: list[str]  # nodi GLB da accendere
+    phenotypes: list[str]  # HPO ID che la indicano, il più vicino prima
+    hops: int  # 0 = sede dichiarata proprio qui; di più = ereditata o risalita
+
+
+class Located(BaseModel):
+    phenotypes: list[LocatedPhenotype]
+    structures: list[LocatedStructure]

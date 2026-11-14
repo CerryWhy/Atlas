@@ -182,7 +182,17 @@ def load_phenotypes(conn: sqlite3.Connection) -> set[str]:
     terms = [t for t in obo.iter_terms(config.HPO_OBO) if t.id.startswith("HP:") and not t.obsolete]
     bilateral = bilateral_ids(terms)
     db.upsert_phenotypes(
-        conn, [(t.id, t.name, t.definition, int(t.id in bilateral)) for t in terms]
+        conn,
+        [
+            (
+                t.id,
+                t.name,
+                t.definition,
+                int(t.id in bilateral),
+                " | ".join(t.exact_synonyms) or None,
+            )
+            for t in terms
+        ],
     )
     links = {
         (t.id, target)

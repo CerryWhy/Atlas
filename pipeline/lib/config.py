@@ -165,4 +165,10 @@ NCBI_LITARCH = "https://ftp.ncbi.nlm.nih.gov/pub/litarch/"
 # Modello multilingue locale (SPEC §4: nessun testo esce per gli embedding).
 # E5 vuole i prefissi "query: " / "passage: ". Cambiare modello rifà tutti i vettori.
 EMBED_MODEL = "intfloat/multilingual-e5-base"
+# Per /locate (Fase 5) un modello più grande della stessa famiglia, solo sui nomi dei
+# fenotipi (~17.000 frasi brevi): sulle 20 frasi di prova (tests/fixtures/symptoms.json)
+# e5-base arriva a 15/20, e5-large a 19/20 (misurato il 14/11/2026). La ricerca nei
+# testi resta su EMBED_MODEL: supera già la sua soglia, e rifare 140.000 chunk col
+# modello grande costerebbe più di un'ora anche su GPU.
+LOCATE_MODEL = "intfloat/multilingual-e5-large"
 CHUNK_CHARS = 1500  # obiettivo per chunk: ~350 token, sotto il limite di 512 di E5
