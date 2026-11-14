@@ -126,6 +126,21 @@ scaricati finisce in `unmapped` (invariante I5). **Dopo ogni esecuzione vanno le
   sull'apertura di ogni documento. L'API codifica la domanda con lo stesso modello
   registrato in `embedding_meta`.
 
+### Scelte delle Fasi 5 e 6 da conoscere
+
+- **Dal sintomo al corpo** (`POST /locate`). La sede di un fenotipo è quella della sua
+  definizione logica HPO o, se manca, quella dell'antenato is_a più vicino che la
+  dichiara (semantica della sottoclasse: "Back pain" è un'"Abnormality of the
+  vertebral column"). Una sede non in scena sale al "tutto" più vicino (part_of), mai a
+  una struttura larga. Ogni fenotipo cita HPO, e l'antenato quando la sede è
+  ereditata. Il testo scritto non viene salvato. Un vettore per nome e sinonimo di
+  fenotipo, con un modello proprio (`LOCATE_MODEL`, e5-large): 19/20 sulle frasi di
+  prova contro 15/20 di e5-base.
+- **Letteratura** (`GET /structure/{id}/literature`): Europe PMC in tempo reale, solo
+  open access, ricerca per nome della struttura (senza lato) in titoli e abstract.
+  Mai ingerita né salvata; ogni articolo porta la licenza che Europe PMC dichiara.
+- **L'assistente (Fase 4) non c'è**: rinviato per decisione dell'utente.
+
 ## Sviluppo
 
 ```bash

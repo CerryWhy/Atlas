@@ -3,7 +3,7 @@
 Per un agente di coding (o per te) che apre una nuova sessione. Leggi prima `SPEC.md`:
 contiene gli invarianti non negoziabili. Questo file dice a che punto siamo.
 
-## Stato (13 novembre 2026, notte)
+## Stato (14 novembre 2026)
 
 Sul branch `main`:
 
@@ -64,32 +64,45 @@ la pipeline completa non gira qui.
   è sbagliata da tutte le varianti provate.
 - muscoli in scena 47 (BodyParts3D ne ha pochi): soglia del test corretta.
 
-Non fatto: Fasi 4–6 della SPEC (assistente con citazioni, sintomo → corpo, Europe PMC).
+**Fase 4 (assistente) rinviata per decisione dell'utente** (14/11/2026): niente
+`POST /ask`, niente modello di linguaggio. Le Fasi 5 e 6 sono fatte senza di esso:
+
+- **Fase 5 — dal sintomo al corpo** (`POST /locate`, casella "Dal sintomo al corpo"
+  nel pannello). 04 calcola `phenotype_locus` (`pipeline/lib/phenosite.py`): sede HPO
+  dichiarata, o ereditata dall'antenato is_a più vicino (molti sintomi comuni non ne
+  hanno una propria), poi la struttura in scena o il "tutto" più vicino. 07 indicizza
+  un vettore per nome e sinonimo di fenotipo con `LOCATE_MODEL` =
+  `multilingual-e5-large` (prefisso "query:" da entrambe le parti). Frasi di prova in
+  `tests/fixtures/symptoms.json`, scritte prima del codice (commit separato).
+  Misurato qui (banco di prova): e5-base 12 → 15/20, e5-large **19/20** (soglia 16).
+  I nomi italiani del progetto di traduzione HPO, provati, peggiorano (13/20): non
+  usati. Milza e tiroide mancano da BodyParts3D.
+- **Fase 6 — Europe PMC**, adattata: senza assistente, voce "Letteratura" nella
+  scheda (`GET /structure/{id}/literature`): articoli open access cercati in tempo
+  reale per nome della struttura, mai ingeriti, ognuno con la sua licenza e il link a
+  Europe PMC (DOI a parte). La scheda ci si apre quando non ha contenuti locali: le 19
+  lacune della Fase 3 ricevono articoli. Provato dal vivo; i link non si aprono da
+  questo ambiente (403 ai client automatici): **da verificare nel browser**.
 
 ## Da fare per primo, sul tuo computer
 
+Dopo le Fasi 5 e 6 (Prompt dei comandi, nella cartella del progetto):
+
 ```bash
-git fetch origin && git checkout claude/funny-franklin-2ikacr
-# con GPU NVIDIA: prima torch con CUDA, https://pytorch.org/get-started/locally/
-.venv/Scripts/pip install -e ".[dev,embed]"
-npm run pipeline        # 01–07; 07 calcola ~140.000 embedding (minuti su GPU)
-PYTHONUTF8=1 .venv/Scripts/pytest -q    # i test sui dati non devono essere saltati
+git pull
+npm run pipeline:ontologies   # 03: ora salva i sinonimi dei fenotipi
+npm run pipeline:bridge       # 04: calcola fenotipo → struttura (phenotype_locus)
+npm run pipeline:links        # 06: registra Europe PMC tra le fonti
+npm run pipeline:embed        # 07: solo i vettori dei fenotipi (scarica e5-large, ~2 GB)
+set PYTHONUTF8=1
+.venv\Scripts\pytest -q
 ```
 
-Poi leggere:
-- `data/reports/documents.md`: in fondo, le strutture addominali con `uberon_id` senza
-  documenti. Il criterio della Fase 3 ne chiede zero.
-- `pytest -q tests/test_search_quality.py -s`: le 20 domande di prova, ≥ 18 giuste.
-- `data/reports/is_a_links.md`: la tabella "Antenati usati". Se compaiono antenati
-  troppo generici ("Organ", "Muscle organ", "Artery"), abbassare `ISA_MAX_DESCENDANTS`
-  (ora 300) o `ISA_MAX_HOPS` (ora 3) in `pipeline/lib/config.py`.
-- `data/reports/coverage.md`: quanto rendono le ereditarietà ("+ lato", "+ classe").
-- output di 03 (nomi italiani da Wikidata) e di 04 (tessuti; avvisi "classe FMA per i
-  tessuti non trovata": correggere il nome in `TISSUE_CLASSES`).
-- **verifica della Fase 2**: `http://localhost:5173/?perf`, ruotare e ingrandire per
-  qualche secondo (obiettivi: caricamento < 3 s, ~60 fps); provare strati e `flyTo`.
-- alcune schede: un osso con lato (nota "classe più generale", nome italiano), il
-  fegato (voce "Letture").
+Poi:
+- `pytest -q -s tests/test_locate_quality.py`: i 20 sintomi, ≥ 16 giusti.
+- nell'app: la casella "Dal sintomo al corpo"; la voce "Letteratura" di una scheda
+  (aprire qualche link: da qui non si è potuto verificare che si aprano).
+- **verifica della Fase 2**: `http://localhost:5173/?perf` (caricamento < 3 s, ~60 fps).
 
 ## Problemi aperti, in ordine di valore
 
@@ -146,8 +159,7 @@ Se cambi l'API, rigenera i tipi con l'API accesa: `npm run gen:types`.
 
 ## Prossimo passo suggerito
 
-Eseguire la pipeline completa e verificare i criteri della Fase 3 (sopra). Poi Fase 4:
-`POST /ask` con `enforce_citations` e la sua suite di test, `ChatPanel` +
-`CitationList`, prompt di sistema con il rifiuto di SPEC §9. Serve decidere quale
-modello di linguaggio usa l'assistente (locale o via API, e con quale chiave): è una
-scelta dell'utente.
+Verificare sul computer le Fasi 5 e 6 (sopra) e la misura di Fase 2. Poi, quando
+l'utente lo decide, la Fase 4 (assistente con citazioni): `POST /ask` con
+`enforce_citations` e la sua suite di test, `ChatPanel`, prompt di sistema con il
+rifiuto di SPEC §9; serve scegliere il modello di linguaggio (locale o via API).
