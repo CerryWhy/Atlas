@@ -76,9 +76,19 @@ def test_bibliography_markers_are_stripped(conn: sqlite3.Connection) -> None:
     assert marked[0][0] < 50  # qualche [n] può restare dentro tabelle o formule
 
 
+# Lacune accettate dall'utente il 14/11/2026 chiudendo la Fase 3: 19 strutture
+# addominali con uberon_id di cui nessuna fonte (StatPearls, MedlinePlus, Orphanet) parla,
+# né la loro struttura contenitore utile (es. arteria gastroduodenale, vene frenica e
+# testicolare, perineo, "integumentary system"). Collegarle richiederebbe legami non
+# dichiarati (I5). L'elenco è in data/reports/documents.md; la Fase 6 (Europe PMC) può
+# coprirle. Il test ora impedisce che peggiori.
+ACCEPTED_ABDOMINAL_GAPS = 19
+
+
 @needs_structures
 def test_every_abdominal_structure_with_uberon_has_a_document(conn: sqlite3.Connection) -> None:
-    """Accettazione Fase 3: ogni struttura addominale con uberon_id ha ≥ 1 documento."""
+    """Accettazione Fase 3: ogni struttura addominale con uberon_id ha ≥ 1 documento,
+    a parte le lacune accettate (ACCEPTED_ABDOMINAL_GAPS)."""
     missing = rows(
         conn,
         """
@@ -87,4 +97,7 @@ def test_every_abdominal_structure_with_uberon_has_a_document(conn: sqlite3.Conn
           AND NOT EXISTS (SELECT 1 FROM document_structure ds WHERE ds.fma_id = s.fma_id)
         """,
     )
-    assert missing == [], f"{len(missing)} strutture senza documenti, es. {missing[:5]}"
+    assert len(missing) <= ACCEPTED_ABDOMINAL_GAPS, (
+        f"{len(missing)} strutture senza documenti (accettate: {ACCEPTED_ABDOMINAL_GAPS}),"
+        f" es. {missing[:5]}"
+    )

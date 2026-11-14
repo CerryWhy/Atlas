@@ -47,6 +47,9 @@ la pipeline completa non gira qui.
 
 **Misurato sui dati reali (computer con RTX 5060, 14/11/2026)**: pipeline completa;
 119 test passati, 2 falliti:
+- **Fase 3 chiusa dall'utente il 14/11/2026** con l'ultima misura: 121 test passati,
+  ricerca ≥ 18/20 (fusione per posizione), 19 strutture addominali senza documenti
+  **accettate come lacune** (test: non devono aumentare).
 - strutture addominali con `uberon_id` senza documenti: 78 → 25 (legami 'container').
   Con le varianti di nome per parentesi e plurale latino (dopo quella misura) il banco
   di prova qui scende da 27 a 21. Le rimaste sono quasi tutte strutture di cui il corpus
