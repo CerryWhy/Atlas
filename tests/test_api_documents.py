@@ -110,16 +110,16 @@ def test_search_without_vectors_says_why(
     assert r.status_code == 503 and "vettore" in r.json()["detail"]
 
 
-def test_merge_keeps_one_hit_per_document_nearest_first() -> None:
-    hits = [
-        ("a#3", "a", 0.30),
-        ("a#0", "a", 0.10),  # titolo di "a": vince sul suo paragrafo più lontano
-        ("b#1", "b", 0.20),
-        ("c#0", "c", 0.20),
-        ("a#5", "a", 0.05),  # ...ma un paragrafo ancora più vicino vince sul titolo
-    ]
-    assert local.merge_by_document(hits, 2) == [("a#5", "a", 0.05), ("b#1", "b", 0.20)]
-    assert local.merge_by_document([], 3) == []
+def test_fusion_ranks_by_position_not_by_raw_distance() -> None:
+    """Un titolo vicino non schiaccia un documento che i paragrafi mettono in testa: conta
+    la posizione in ciascuna lista, e chi compare in entrambe sale."""
+    chunks = [("s#4", "s", 0.30), ("s#2", "s", 0.35), ("b#1", "b", 0.40), ("c#3", "c", 0.45)]
+    titles = [("t#0", "t", 0.05), ("x#0", "x", 0.06), ("s#0", "s", 0.07)]
+    top = local.fuse(chunks, titles, 3)
+    # "s" è primo tra i paragrafi e terzo tra i titoli: vince; poi "t" (primo titolo)
+    assert [h[1] for h in top] == ["s", "t", "b"]
+    assert top[0] == ("s#4", "s", 0.30)  # si mostra il paragrafo trovato, non il titolo
+    assert local.fuse([], [], 3) == []
 
 
 def test_a_document_found_by_title_comes_first_with_its_first_chunk(

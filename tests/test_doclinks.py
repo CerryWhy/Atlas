@@ -264,3 +264,20 @@ def test_generic_terms_block_big_categories_and_systems() -> None:
     assert "UBERON:1" in generic
     assert {"UBERON:5", "UBERON:4", "UBERON:6"} <= generic  # il sistema e le sue sottoclassi
     assert "UBERON:3" not in generic and "UBERON:2" not in generic
+
+
+def test_variants_for_parentheses_and_latin_plurals() -> None:
+    assert doclinks.singular("thoracic vertebrae") == "thoracic vertebra"
+    assert doclinks.singular("aorta") == "aorta"  # non è un plurale
+    assert doclinks.name_variants("Portal Venous System (Hepatic Portal System)") == [
+        "portal venous system (hepatic portal system)",
+        "portal venous system",
+        "hepatic portal system",
+    ]
+    assert doclinks.name_variants("Adrenal Glands (Suprarenal Glands)") == [
+        "adrenal glands (suprarenal glands)",
+        "adrenal glands",
+        "adrenal gland",
+        "suprarenal glands",
+        "suprarenal gland",
+    ]

@@ -69,9 +69,12 @@ MAX_PART_OF_HOPS = 2
 
 
 def singular(name: str) -> str:
-    """Singolare dell'ultima parola, per le sole regole regolari dell'inglese."""
+    """Singolare dell'ultima parola, per le sole regole regolari dell'inglese e il plurale
+    latino in -ae dell'anatomia ("vertebrae" → "vertebra")."""
     head, _, last = name.rpartition(" ")
-    if last.endswith("ies") and len(last) > 4:
+    if last.endswith("ae") and len(last) > 4:
+        last = last[:-1]
+    elif last.endswith("ies") and len(last) > 4:
         last = last[:-3] + "y"
     elif last.endswith(("ches", "shes", "sses", "xes")):
         last = last[:-2]
@@ -87,14 +90,25 @@ REGION_PREFIXES = frozenset(
 )
 
 
+_PAREN = re.compile(r"\s*\(([^()]+)\)\s*")
+
+
 def name_variants(name: str) -> list[str]:
-    """Il nome, il singolare, senza la regione iniziale, entrambe (senza ripetizioni)."""
-    base = norm(name)
-    out = [base, singular(base)]
-    words = base.split(" ")
-    if len(words) > 1 and words[0] in REGION_PREFIXES:
-        rest = " ".join(words[1:])
-        out += [rest, singular(rest)]
+    """Il nome, il singolare, senza la regione iniziale, entrambe (senza ripetizioni).
+    Un nome con una parte tra parentesi ("Adrenal Glands (Suprarenal Glands)") si prova
+    anche senza di essa e poi con la sola parte tra parentesi."""
+    full = norm(name)
+    m = _PAREN.search(full)
+    bases = [full]
+    if m:
+        bases += [norm(_PAREN.sub(" ", full)), norm(m.group(1))]
+    out: list[str] = []
+    for base in bases:
+        out += [base, singular(base)]
+        words = base.split(" ")
+        if len(words) > 1 and words[0] in REGION_PREFIXES:
+            rest = " ".join(words[1:])
+            out += [rest, singular(rest)]
     return list(dict.fromkeys(out))
 
 
