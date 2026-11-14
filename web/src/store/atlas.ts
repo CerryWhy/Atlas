@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import { getStructure, type MeshFile, type MeshNode, type Structure } from "../api/client";
+import {
+  getStructure,
+  postLocate,
+  type Located,
+  type MeshFile,
+  type MeshNode,
+  type Structure,
+} from "../api/client";
 import {
   DEFAULT_LEVEL,
   defaultModes,
@@ -21,6 +28,15 @@ type Detail =
   | { state: "error"; message: string }
   | { state: "ok"; data: Structure };
 
+type LocateState =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "error"; message: string }
+  | { state: "ok"; data: Located };
+
+/** Dove la camera deve volare quando non c'è una scheda aperta (es. risultati di /locate). */
+export type Aim = { id: string; c: [number, number, number]; r: number } | null;
+
 type AtlasState = {
   regions: MeshFile[];
   nodes: ReadonlyMap<FmaId, SceneNode>;
@@ -35,6 +51,9 @@ type AtlasState = {
   modes: Record<GroupKey, Mode>;
   /** Livello del comando a strati; null quando un gruppo è stato cambiato a mano. */
   level: Level | null;
+  /** Risultati di "dal sintomo al corpo": restano finché non se ne chiede un altro. */
+  located: LocateState;
+  aim: Aim;
   /** "Mostra solo questo": tutto ciò che non è acceso dalla selezione sparisce. */
   isolated: boolean;
 
@@ -44,7 +63,23 @@ type AtlasState = {
   cycleMode: (group: GroupKey) => void;
   setLevel: (level: Level) => void;
   toggleIsolated: () => void;
+  locate: (text: string) => void;
+  clearLocated: () => void;
 };
+
+/** I nodi da accendere per un risultato di /locate: tutte le strutture trovate. */
+function locatedNodes(data: Located): ReadonlySet<FmaId> {
+  return new Set(data.structures.flatMap((s) => s.mesh_nodes));
+}
+
+function aimAt(data: Located): Aim {
+  const first = data.structures.find((s) => s.centroid && s.radius);
+  return first?.centroid && first.radius
+    ? { id: first.fma_id, c: first.centroid as [number, number, number], r: first.radius }
+    : null;
+}
+
+let locating: AbortController | null = null;
 
 const EMPTY: ReadonlySet<FmaId> = new Set();
 let inflight: AbortController | null = null;
@@ -60,6 +95,8 @@ export const useAtlasStore = create<AtlasState>()((set, get) => ({
   modes: defaultModes(),
   level: DEFAULT_LEVEL,
   isolated: false,
+  located: { state: "idle" },
+  aim: null,
 
   setScene: (regions, nodes) =>
     set({
@@ -75,10 +112,12 @@ export const useAtlasStore = create<AtlasState>()((set, get) => ({
     inflight?.abort();
     inflight = null;
     if (id === null) {
+      // chiusa la scheda si torna ai risultati di /locate, se ci sono, ancora accesi
+      const located = get().located;
       set({
         selected: null,
         detail: { state: "idle" },
-        lit: EMPTY,
+        lit: located.state === "ok" ? locatedNodes(located.data) : EMPTY,
         isolated: false,
       });
       return;
@@ -116,6 +155,29 @@ export const useAtlasStore = create<AtlasState>()((set, get) => ({
       hovered: node,
       hoveredFocus: node ? (get().nodes.get(node)?.focus_fma_id ?? node) : null,
     });
+  },
+
+  locate: (text) => {
+    locating?.abort();
+    const ctrl = new AbortController();
+    locating = ctrl;
+    get().select(null);
+    set({ located: { state: "loading" }, aim: null });
+    postLocate(text, ctrl.signal)
+      .then((data) => {
+        if (locating !== ctrl) return;
+        set({ located: { state: "ok", data }, lit: locatedNodes(data), aim: aimAt(data) });
+      })
+      .catch((e: unknown) => {
+        if (ctrl.signal.aborted) return;
+        set({ located: { state: "error", message: e instanceof Error ? e.message : String(e) } });
+      });
+  },
+
+  clearLocated: () => {
+    locating?.abort();
+    locating = null;
+    set({ located: { state: "idle" }, aim: null, lit: get().selected ? get().lit : EMPTY });
   },
 
   toggleIsolated: () => set((s) => ({ isolated: s.selected !== null && !s.isolated })),

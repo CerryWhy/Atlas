@@ -89,6 +89,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/locate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Locate */
+        post: operations["locate_locate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -154,6 +171,63 @@ export interface components {
             carries_content: boolean;
             /** Citations */
             citations: components["schemas"]["Citation"][];
+        };
+        /**
+         * LocateRequest
+         * @description Un segno o sintomo descritto in generale (SPEC §9: non la situazione di una persona).
+         *     Il testo non viene salvato né registrato (I4).
+         */
+        LocateRequest: {
+            /** Text */
+            text: string;
+        };
+        /** Located */
+        Located: {
+            /** Phenotypes */
+            phenotypes: components["schemas"]["LocatedPhenotype"][];
+            /** Structures */
+            structures: components["schemas"]["LocatedStructure"][];
+        };
+        /**
+         * LocatedPhenotype
+         * @description Un fenotipo HPO vicino al testo, e da dove viene la sua sede.
+         */
+        LocatedPhenotype: {
+            /** Hpo Id */
+            hpo_id: string;
+            /** Label */
+            label: string;
+            /** Score */
+            score: number;
+            /** Basis */
+            basis: string;
+            /** Via Label */
+            via_label: string;
+            /** Citations */
+            citations: components["schemas"]["Citation"][];
+        };
+        /** LocatedStructure */
+        LocatedStructure: {
+            /** Fma Id */
+            fma_id: string;
+            /** Label En */
+            label_en: string;
+            /** Label It */
+            label_it: string | null;
+            /** Centroid */
+            centroid: [
+                number,
+                number,
+                number
+            ] | null;
+            /** Radius */
+            radius: number | null;
+            /** Mesh Nodes */
+            mesh_nodes: string[];
+            /** Phenotypes */
+            phenotypes: string[];
+            /** Hops */
+            hops: number;
         };
         /** MeshFile */
         MeshFile: {
@@ -483,6 +557,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SearchHit"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    locate_locate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Located"];
                 };
             };
             /** @description Validation Error */

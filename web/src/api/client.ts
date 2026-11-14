@@ -8,6 +8,12 @@ export type MeshFile = Schemas["MeshFile"];
 export type Disease = Schemas["Disease"];
 export type Phenotype = Schemas["Phenotype"];
 export type InheritedLink = Schemas["InheritedLink"];
+export type LocatedPhenotype = Schemas["LocatedPhenotype"];
+export type LocatedStructure = Omit<Schemas["LocatedStructure"], "fma_id" | "mesh_nodes"> & {
+  fma_id: FmaId;
+  mesh_nodes: FmaId[];
+};
+export type Located = { phenotypes: LocatedPhenotype[]; structures: LocatedStructure[] };
 export type StructureRef = Omit<Schemas["StructureRef"], "fma_id"> & { fma_id: FmaId };
 export type ChildRef = Omit<Schemas["ChildRef"], "fma_id"> & { fma_id: FmaId };
 export type MeshNode = Omit<Schemas["MeshNode"], "fma_id" | "focus_fma_id"> & {
@@ -49,6 +55,26 @@ export async function getStructure(id: FmaId, signal?: AbortSignal): Promise<Str
     ancestors: raw.ancestors.map(branded),
     children: raw.children.map(branded),
     mesh_nodes: raw.mesh_nodes.map(asFmaId),
+  };
+}
+
+/** Dal sintomo al corpo (Fase 5). Il testo non viene salvato dal server. */
+export async function postLocate(text: string, signal?: AbortSignal): Promise<Located> {
+  const res = await fetch(BASE + "/locate", {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json", ...(API_KEY ? { "X-API-Key": API_KEY } : {}) },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(`Il server ha risposto ${res.status} a /locate`);
+  const raw = (await res.json()) as Schemas["Located"];
+  return {
+    phenotypes: raw.phenotypes,
+    structures: raw.structures.map((s) => ({
+      ...s,
+      fma_id: asFmaId(s.fma_id),
+      mesh_nodes: s.mesh_nodes.map(asFmaId),
+    })),
   };
 }
 

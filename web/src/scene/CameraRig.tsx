@@ -37,8 +37,14 @@ export function fitDistance(radius: number, fovDeg: number, aspect: number): num
 export function CameraRig() {
   // la scheda è un riferimento stabile: selezionarla non crea oggetti nuovi a ogni lettura
   const data = useAtlasStore((s) => (s.detail.state === "ok" ? s.detail.data : null));
+  // senza una scheda aperta, la meta può venire dai risultati di "dal sintomo al corpo"
+  const aim = useAtlasStore((s) => s.aim);
   const focus =
-    data?.centroid && data.radius ? { id: data.fma_id, c: data.centroid, r: data.radius } : null;
+    data?.centroid && data.radius
+      ? { id: data.fma_id, c: data.centroid, r: data.radius }
+      : aim
+        ? { id: `aim:${aim.id}`, c: aim.c, r: aim.r }
+        : null;
   const camera = useThree((s) => s.camera);
   const controls = useThree((s) => s.controls) as unknown as OrbitLike | null;
   const size = useThree((s) => s.size);

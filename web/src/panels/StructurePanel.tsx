@@ -5,6 +5,7 @@ import { displayName, sceneName, spellId } from "../lib/labels";
 import { useAtlasStore } from "../store/atlas";
 import type { FmaId } from "../types/ids";
 import { CitationList, sourceName } from "./CitationList";
+import { LocateBox } from "./LocateBox";
 import { SearchBox } from "./SearchBox";
 
 const LINK =
@@ -51,6 +52,7 @@ function Intro() {
         <dt className="text-ink-soft">Legenda</dt>
         <dd>mostra, vela o nasconde un gruppo</dd>
       </dl>
+      <LocateBox />
     </div>
   );
 }
