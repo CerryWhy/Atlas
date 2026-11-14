@@ -161,3 +161,22 @@ def test_a_changed_title_gets_a_new_vector(tmp_path: Path) -> None:
         db.upsert_document(conn, ("d:1", "s", "New", "http://x", "CC BY 4.0", "2026", "t", "h"))
         assert vec.delete_orphans(conn) == 1
     assert vec.titles_without_vectors(conn, 10) == [("d:1", "New")]
+
+
+def test_vector_searches_never_join_other_tables() -> None:
+    """Regressione: con un JOIN, SQLite può rifare la ricerca KNN per ogni riga dell'altra
+    tabella (misurato: 150 s per domanda su 140.000 chunk). Le ricerche su chunk_vec e
+    title_vec devono stare in query da sole."""
+    import ast
+
+    import api.queries
+
+    source = Path(api.queries.__file__).read_text(encoding="utf-8")
+    sqls = [
+        n.value
+        for n in ast.walk(ast.parse(source))
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and "MATCH" in n.value
+    ]
+    assert sqls, "nessuna ricerca vettoriale trovata in api/queries.py"
+    for sql in sqls:
+        assert "JOIN" not in sql.upper(), sql

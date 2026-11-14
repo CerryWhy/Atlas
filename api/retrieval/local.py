@@ -56,11 +56,8 @@ def search(conn: sqlite3.Connection, text: str, k: int) -> list[dict[str, Any]]:
     query = encode_query(conn, text)
     n = k * OVERSAMPLE
     found = [
-        (str(r["chunk_id"]), str(r["doc_id"]), float(r["distance"]))
-        for r in (
-            *queries.nearest_chunk_ids(conn, query, n),
-            *queries.nearest_title_docs(conn, query, n),
-        )
+        *queries.nearest_chunk_ids(conn, query, n),
+        *queries.nearest_title_docs(conn, query, n),
     ]
     top = merge_by_document(found, k)
     if not top:

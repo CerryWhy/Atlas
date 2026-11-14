@@ -144,6 +144,8 @@ CREATE TABLE IF NOT EXISTS chunk (
   ordinal   INTEGER NOT NULL,
   text      TEXT NOT NULL
 );
+-- per documento: 05 cancella i chunk di un documento cambiato, l'API cerca il primo
+CREATE INDEX IF NOT EXISTS idx_chunk_doc ON chunk(doc_id, ordinal);
 
 -- Estensione allo schema di SPEC §6: versione e licenza di ogni fonte strutturata
 -- caricata. Serve a citare (I2) e ad attribuire (§7) senza che l'API conosca i file grezzi.

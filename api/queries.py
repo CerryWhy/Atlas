@@ -217,35 +217,62 @@ def embedding_model(conn: sqlite3.Connection) -> str | None:
     return str(row[0]) if row else None
 
 
-def nearest_chunk_ids(conn: sqlite3.Connection, query_vec: bytes, n: int) -> list[sqlite3.Row]:
+# Le ricerche KNN su sqlite-vec vanno eseguite DA SOLE, senza join: in un join SQLite
+# può scegliere di scorrere l'altra tabella e rifare la ricerca sui vettori per ogni sua
+# riga (misurato: 150 s per una domanda su 140.000 chunk). Le righe collegate si
+# leggono dopo, per chiave.
+
+
+def nearest_chunk_ids(
+    conn: sqlite3.Connection, query_vec: bytes, n: int
+) -> list[tuple[str, str, float]]:
     """(chunk_id, doc_id, distance) degli n chunk più vicini (distanza coseno)."""
-    return conn.execute(
-        """
-        WITH hits AS (
-          SELECT chunk_id, distance FROM chunk_vec WHERE embedding MATCH ? AND k = ?
-        )
-        SELECT h.chunk_id, c.doc_id, h.distance FROM hits h JOIN chunk c USING (chunk_id)
-        """,
+    hits = conn.execute(
+        "SELECT chunk_id, distance FROM chunk_vec WHERE embedding MATCH ? AND k = ?",
         (query_vec, n),
     ).fetchall()
+    if not hits:
+        return []
+    marks = ",".join("?" * len(hits))
+    doc_of = dict(
+        conn.execute(
+            f"SELECT chunk_id, doc_id FROM chunk WHERE chunk_id IN ({marks})",
+            [h["chunk_id"] for h in hits],
+        ).fetchall()
+    )
+    return [
+        (str(h["chunk_id"]), str(doc_of[h["chunk_id"]]), float(h["distance"]))
+        for h in hits
+        if h["chunk_id"] in doc_of
+    ]
 
 
-def nearest_title_docs(conn: sqlite3.Connection, query_vec: bytes, n: int) -> list[sqlite3.Row]:
+def nearest_title_docs(
+    conn: sqlite3.Connection, query_vec: bytes, n: int
+) -> list[tuple[str, str, float]]:
     """(chunk_id del primo chunk, doc_id, distance) degli n documenti dal titolo più
     vicino. Nessuna riga se 07 non ha ancora calcolato i vettori dei titoli."""
     try:
-        return conn.execute(
-            """
-            WITH hits AS (
-              SELECT doc_id, distance FROM title_vec WHERE embedding MATCH ? AND k = ?
-            )
-            SELECT c.chunk_id, h.doc_id, h.distance
-            FROM hits h JOIN chunk c ON c.doc_id = h.doc_id AND c.ordinal = 0
-            """,
+        hits = conn.execute(
+            "SELECT doc_id, distance FROM title_vec WHERE embedding MATCH ? AND k = ?",
             (query_vec, n),
         ).fetchall()
     except sqlite3.OperationalError:  # title_vec non esiste (indice fatto prima dei titoli)
         return []
+    if not hits:
+        return []
+    marks = ",".join("?" * len(hits))
+    first = dict(
+        conn.execute(
+            f"SELECT doc_id, chunk_id FROM chunk WHERE ordinal = 0 AND doc_id IN ({marks})",
+            [h["doc_id"] for h in hits],
+        ).fetchall()
+    )
+    return [
+        (str(first[h["doc_id"]]), str(h["doc_id"]), float(h["distance"]))
+        for h in hits
+        if h["doc_id"] in first
+    ]
 
 
 def chunks_with_documents(conn: sqlite3.Connection, chunk_ids: list[str]) -> list[sqlite3.Row]:
