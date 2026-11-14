@@ -1,0 +1,27 @@
+{
+  "_nota": "Fase 5, accettazione (SPEC §10): 20 sintomi in italiano colloquiale, scritti PRIMA dell'implementazione di /locate. Un sintomo passa se tra le prime `k` strutture restituite ce n'è una il cui nome inglese (FMA) contiene, senza maiuscole, almeno una delle stringhe attese. Le frasi descrivono il sintomo in generale, non la situazione di una persona (SPEC §9, I4). Scelte solo tra sintomi per cui HPO dichiara una sede che arriva a una struttura in scena (verificato su HPO e BodyParts3D il 14/11/2026): milza e tiroide mancano da BodyParts3D e sono escluse.",
+  "k": 5,
+  "min_pass": 16,
+  "symptoms": [
+    {"q": "fegato ingrossato", "structures": ["liver"]},
+    {"q": "fegato grasso", "structures": ["liver"]},
+    {"q": "prurito su tutta la pelle", "structures": ["skin"]},
+    {"q": "sangue nelle urine", "structures": ["kidney", "bladder", "ureter", "urethra"]},
+    {"q": "sangue dal naso", "structures": ["nose", "nasal"]},
+    {"q": "fatica a deglutire il cibo", "structures": ["esophagus", "pharynx"]},
+    {"q": "acido che risale dallo stomaco in gola", "structures": ["esophagus", "stomach"]},
+    {"q": "calcoli alla cistifellea", "structures": ["gallbladder"]},
+    {"q": "calcoli ai reni", "structures": ["kidney"]},
+    {"q": "bruciore quando si fa pipì", "structures": ["bladder", "urethra"]},
+    {"q": "non riuscire a trattenere la pipì", "structures": ["bladder", "urethra"]},
+    {"q": "emorroidi che sanguinano", "structures": ["rectum", "anal", "anus"]},
+    {"q": "mal di schiena", "structures": ["vertebral column", "vertebra", "lumbar"]},
+    {"q": "dolore nella parte bassa della schiena", "structures": ["vertebral column", "vertebra", "lumbar"]},
+    {"q": "infiammazione del pancreas", "structures": ["pancreas"]},
+    {"q": "appendicite", "structures": ["appendix", "large intestine", "cecum", "caecum"]},
+    {"q": "tosse che non passa", "structures": ["lung", "bronch", "trachea", "respiratory"]},
+    {"q": "lingua gonfia e arrossata", "structures": ["tongue"]},
+    {"q": "cuore ingrossato", "structures": ["heart"]},
+    {"q": "ernia all'inguine", "structures": ["wall of abdomen", "inguinal", "abdominal wall"]}
+  ]
+}
