@@ -14,6 +14,7 @@ export type LocatedStructure = Omit<Schemas["LocatedStructure"], "fma_id" | "mes
   mesh_nodes: FmaId[];
 };
 export type Located = { phenotypes: LocatedPhenotype[]; structures: LocatedStructure[] };
+export type Literature = Schemas["Literature"];
 export type StructureRef = Omit<Schemas["StructureRef"], "fma_id"> & { fma_id: FmaId };
 export type ChildRef = Omit<Schemas["ChildRef"], "fma_id"> & { fma_id: FmaId };
 export type MeshNode = Omit<Schemas["MeshNode"], "fma_id" | "focus_fma_id"> & {
@@ -76,6 +77,11 @@ export async function postLocate(text: string, signal?: AbortSignal): Promise<Lo
       mesh_nodes: s.mesh_nodes.map(asFmaId),
     })),
   };
+}
+
+/** Articoli open access di Europe PMC per una struttura, cercati in tempo reale. */
+export function getLiterature(id: FmaId, signal?: AbortSignal): Promise<Literature> {
+  return get<Literature>(`/structure/${encodeURIComponent(id)}/literature`, signal);
 }
 
 export function getRegions(signal?: AbortSignal): Promise<MeshFile[]> {

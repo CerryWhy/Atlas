@@ -1,0 +1,58 @@
+{
+ "hitCount": 413,
+ "resultList": {
+  "result": [
+   {
+    "id": "42403740",
+    "source": "MED",
+    "pmid": "42403740",
+    "pmcid": "PMC13330731",
+    "doi": "10.7759/cureus.110176",
+    "title": "Not Just for Ligation: Repurposing the Gastroduodenal Artery as a Vascular Conduit During Pancreaticoduodenectomy.",
+    "authorString": "Dhanireddy K, Allamaneni S, Batey J.",
+    "journalInfo": {
+     "journal": {
+      "title": "Cureus"
+     }
+    },
+    "pubYear": "2026",
+    "isOpenAccess": "Y",
+    "license": "cc by"
+   },
+   {
+    "id": "42488252",
+    "source": "MED",
+    "pmid": "42488252",
+    "pmcid": "PMC13390963",
+    "doi": "10.7759/cureus.111268",
+    "title": "Endovascular Coil Embolization of a Ruptured Gastroduodenal Artery Aneurysm: A Case Report.",
+    "authorString": "Shengelia D, Mamaiashvili M, Kentchadze G, Mukhigulashvili L.",
+    "journalInfo": {
+     "journal": {
+      "title": "Cureus"
+     }
+    },
+    "pubYear": "2026",
+    "isOpenAccess": "Y",
+    "license": "cc by"
+   },
+   {
+    "id": "42909318",
+    "source": "MED",
+    "pmid": "42909318",
+    "pmcid": "PMC13684894",
+    "doi": "10.7759/cureus.116666",
+    "title": "Sex-Based Differences in Gastroduodenal Artery Morphometry.",
+    "authorString": "Stewart MW, Watts JM, Schmidt VJ, Aulakh S, Smith CT, Dunivin F, Kirkland J, Zolnierz M.",
+    "journalInfo": {
+     "journal": {
+      "title": "Cureus"
+     }
+    },
+    "pubYear": "2026",
+    "isOpenAccess": "Y",
+    "license": "cc by"
+   }
+  ]
+ }
+}

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api.db import MESHES_DIR
-from api.routes import attribution, locate, regions, search, structure
+from api.routes import attribution, literature, locate, regions, search, structure
 
 API_KEY = os.environ.get("ATLAS_API_KEY")
 
@@ -34,6 +34,7 @@ app.include_router(regions.router, dependencies=guarded)
 app.include_router(attribution.router, dependencies=guarded)
 app.include_router(search.router, dependencies=guarded)
 app.include_router(locate.router, dependencies=guarded)
+app.include_router(literature.router, dependencies=guarded)
 
 MESHES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/meshes", StaticFiles(directory=MESHES_DIR), name="meshes")

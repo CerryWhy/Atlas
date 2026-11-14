@@ -5,13 +5,14 @@ import { displayName, sceneName, spellId } from "../lib/labels";
 import { useAtlasStore } from "../store/atlas";
 import type { FmaId } from "../types/ids";
 import { CitationList, sourceName } from "./CitationList";
+import { LiteratureList } from "./LiteratureList";
 import { LocateBox } from "./LocateBox";
 import { SearchBox } from "./SearchBox";
 
 const LINK =
   "text-iodine-700 underline decoration-iodine-600/40 underline-offset-2 hover:decoration-iodine-700";
 
-type TabKey = "diseases" | "phenotypes" | "readings" | "parts";
+type TabKey = "diseases" | "phenotypes" | "readings" | "literature" | "parts";
 
 function SourceLink({ cite, children }: { cite: Citation | undefined; children: React.ReactNode }) {
   if (!cite) return <>{children}</>;
@@ -182,16 +183,19 @@ function InheritanceNote({ data }: { data: Structure }) {
 
 function Entry({ data }: { data: Structure }) {
   const select = useAtlasStore((s) => s.select);
-  const tabs: { key: TabKey; label: string; n: number }[] = [
+  // n = null: il numero non si conosce prima di aprirla (Letteratura, cercata dal vivo)
+  const tabs: { key: TabKey; label: string; n: number | null }[] = [
     { key: "diseases", label: "Patologie", n: data.diseases.length },
     { key: "phenotypes", label: "Segni", n: data.phenotypes.length },
     { key: "readings", label: "Letture", n: data.documents.length },
+    { key: "literature", label: "Letteratura", n: null },
     { key: "parts", label: "Parti", n: data.children.length },
   ];
-  const firstFilled = tabs.find((t) => t.n > 0)?.key ?? "diseases";
+  // si apre sulla prima voce con contenuti locali; senza, sulla letteratura
+  const firstFilled = tabs.find((t) => t.n !== null && t.n > 0)?.key ?? "literature";
   const [picked, setPicked] = useState<TabKey | null>(null);
-  const tab = picked && tabs.some((t) => t.key === picked && t.n > 0) ? picked : firstFilled;
-  const nothing = tabs.every((t) => t.n === 0);
+  const tab = picked && tabs.some((t) => t.key === picked && t.n !== 0) ? picked : firstFilled;
+  const nothing = false;
   // Il segno "senza lato" serve solo se una lista mescola voci proprie ed ereditate;
   // quando sono tutte ereditate lo dice già la nota in alto.
   const mixed = {
@@ -227,7 +231,7 @@ function Entry({ data }: { data: Structure }) {
       )}
 
       {!nothing && (
-        <div role="tablist" aria-label="Contenuti della scheda" className="mt-6 flex gap-5">
+        <div role="tablist" aria-label="Contenuti della scheda" className="mt-6 flex flex-wrap gap-x-4 gap-y-1">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -242,7 +246,8 @@ function Entry({ data }: { data: Structure }) {
                   : "border-transparent text-ink-mute hover:text-ink"
               }`}
             >
-              {t.label} <span className="tnum font-normal text-ink-mute">{t.n}</span>
+              {t.label}
+              {t.n !== null && <span className="tnum font-normal text-ink-mute"> {t.n}</span>}
             </button>
           ))}
         </div>
@@ -305,6 +310,8 @@ function Entry({ data }: { data: Structure }) {
         )}
 
         {tab === "readings" && data.documents.length > 0 && <Readings data={data} />}
+
+        {tab === "literature" && <LiteratureList id={data.fma_id} />}
 
         {tab === "parts" && data.children.length > 0 && (
           <>

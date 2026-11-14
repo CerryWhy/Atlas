@@ -122,6 +122,18 @@ def main() -> int:
         titles = db.document_titles(conn)
         to_disease, to_structure = doclinks.link(refs, titles, vocab)
         db.replace_document_links(conn, to_disease, to_structure)
+        # Tier 2 (Fase 6): articoli open access cercati in tempo reale dall'API, mai
+        # ingeriti. Registrato qui perché compaia tra le fonti in /attribution.
+        db.upsert_source_release(
+            conn,
+            "europepmc",
+            "Europe PMC (open access, live)",
+            "live",
+            "https://europepmc.org/",
+            "per article (open access; license shown with each article)",
+            "Open access articles retrieved live from Europe PMC (https://europepmc.org);"
+            " each article is cited under its own license.",
+        )
         missing = db.abdominal_structures_without_documents(conn, ACCEPTANCE_REGION)
         with_uberon = conn.execute(
             "SELECT COUNT(*) FROM structure WHERE region = ? AND uberon_id IS NOT NULL",

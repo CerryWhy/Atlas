@@ -169,3 +169,21 @@ class LocatedStructure(BaseModel):
 class Located(BaseModel):
     phenotypes: list[LocatedPhenotype]
     structures: list[LocatedStructure]
+
+
+class Article(BaseModel):
+    """Un articolo open access di Europe PMC, cercato in tempo reale (tier 2)."""
+
+    id: str  # 'MED:42909318' | 'PMC:PMC13650450'
+    title: str
+    authors: str
+    journal: str | None
+    year: str | None
+    doi: str | None
+    citation: Citation  # url apribile (DOI o Europe PMC) e licenza dichiarata per l'articolo
+
+
+class Literature(BaseModel):
+    query: str  # la ricerca inviata a Europe PMC: solo il nome della struttura
+    total: int  # risultati open access in Europe PMC
+    articles: list[Article]

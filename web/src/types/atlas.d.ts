@@ -106,10 +106,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/structure/{fma_id}/literature": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Literature */
+        get: operations["literature_structure__fma_id__literature_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Article
+         * @description Un articolo open access di Europe PMC, cercato in tempo reale (tier 2).
+         */
+        Article: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Authors */
+            authors: string;
+            /** Journal */
+            journal: string | null;
+            /** Year */
+            year: string | null;
+            /** Doi */
+            doi: string | null;
+            citation: components["schemas"]["Citation"];
+        };
         /** ChildRef */
         ChildRef: {
             /** Fma Id */
@@ -171,6 +207,15 @@ export interface components {
             carries_content: boolean;
             /** Citations */
             citations: components["schemas"]["Citation"][];
+        };
+        /** Literature */
+        Literature: {
+            /** Query */
+            query: string;
+            /** Total */
+            total: number;
+            /** Articles */
+            articles: components["schemas"]["Article"][];
         };
         /**
          * LocateRequest
@@ -592,6 +637,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Located"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    literature_structure__fma_id__literature_get: {
+        parameters: {
+            query?: {
+                n?: number;
+            };
+            header?: {
+                "x-api-key"?: string | null;
+            };
+            path: {
+                fma_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Literature"];
                 };
             };
             /** @description Validation Error */
