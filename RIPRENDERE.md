@@ -64,6 +64,12 @@ la pipeline completa non gira qui.
   è sbagliata da tutte le varianti provate.
 - muscoli in scena 47 (BodyParts3D ne ha pochi): soglia del test corretta.
 
+**Verificato sui dati reali il 15/11/2026** (computer dell'utente, RTX 5060): pipeline
+03–07 rieseguita, 17.258 nomi di fenotipo indicizzati con e5-large, **135 test
+passati** (1 saltato: la prova dal vivo di Europe PMC, che gira solo con
+`ATLAS_NETWORK_TESTS=1`). Passano le accettazioni delle Fasi 3 e 5. Restano da fare
+nel browser: la misura `?perf` della Fase 2 e l'apertura dei link della Letteratura.
+
 **Fase 4 (assistente) rinviata per decisione dell'utente** (14/11/2026): niente
 `POST /ask`, niente modello di linguaggio. Le Fasi 5 e 6 sono fatte senza di esso:
 
