@@ -415,7 +415,7 @@ la N aperta.
 ### Fase 0 — Proiettile tracciante
 *Obiettivo: una fetta sottilissima che attraversa tutti gli strati.*
 
-- Scaffolding del repo, `make dev` che avvia API e web insieme
+- Scaffolding del repo, `npm run dev` che avvia API e web insieme
 - **Un solo** mesh (fegato) esportato a mano in `liver.glb`
 - **Una sola** riga in `structure`, scritta a mano
 - Tre righe reali in `disease` + `disease_structure`, copiate da MONDO
@@ -583,8 +583,8 @@ Da risolvere prima delle fasi indicate, non durante.
 - **(Fase 3)** Quanti documenti StatPearls hanno una licenza che ne consente la
   ridistribuzione, e non solo la lettura? Cambia il modello di distribuzione.
 - **(Fase 4)** Validazione clinica: chi controlla che i contenuti siano corretti?
-  Serve una persona con formazione medica. Finché non c'è, l'applicazione resta
-  privata.
+  Serve una persona con formazione medica. Finché non c'è, il codice è pubblico
+  come progetto di studio, ma l'applicazione non va offerta come servizio.
 - **(Fase 7)** L'istologia (sotto il livello d'organo) richiede asset che
   BodyParts3D non contiene. È un progetto a sé: decidere se affrontarlo o
   fermare la profondità geometrica all'organo, lasciando che i livelli inferiori

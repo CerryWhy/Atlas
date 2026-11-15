@@ -1,187 +1,175 @@
 # ATLAS
 
-Atlante anatomico 3D con ragionamento clinico assistito. Il brief completo è in
-[SPEC.md](SPEC.md): va letto prima di scrivere codice.
+**Un atlante anatomico 3D del corpo umano che sa anche di clinica.** Si gira il corpo
+intero nel browser, si clicca un organo e la scheda dice quali malattie lo colpiscono,
+quali segni le accompagnano e dove leggerne di più. Oppure si parte dall'altra parte:
+si scrive un sintomo ("mi fa male la pancia a destra") e il corpo si illumina dove
+quel sintomo ha sede.
 
-**Stato:** corpo intero in sei regioni (testa, collo, torace, addome con pelvi, arti
-superiori, arti inferiori), 838 strutture nella scena. Ogni scheda elenca patologie
-(MONDO, con codice ICD-11 quando esiste) e segni (HPO), ciascuno con il rimando alla
-fonte. Clic o ricerca portano la camera sulla struttura (`flyTo`); "Mostra solo questo"
-la isola. La copertura clinica è disomogenea tra regioni: vedi `data/reports/coverage.md`.
+Ogni informazione clinica rimanda alla sua fonte pubblica. Niente è inventato, niente
+è scritto a mano, niente è generato da un modello linguistico.
 
-## Prerequisiti
+> [!WARNING]
+> **ATLAS è uno strumento di studio, non un dispositivo medico.** Non serve a fare
+> diagnosi, non sostituisce un medico e i suoi contenuti non sono stati validati da
+> personale sanitario. In caso di sintomi reali rivolgiti a un professionista.
 
-- Python 3.11+, Node 20+
-- (opzionale) `make`; su Windows usare direttamente gli script `npm run …`
+---
 
-## Setup
+## Cosa fa
+
+| | |
+|---|---|
+| **Corpo intero in 3D** | Sei regioni (testa, collo, torace, addome con pelvi, arti superiori e inferiori), **838 strutture** dai modelli di BodyParts3D. Rotazione, zoom, volo della camera sulla struttura scelta, "mostra solo questo". |
+| **Strati** | Pelle → Muscoli → Ossa → Organi: toglie ciò che sta sopra e vela ciò che sta sotto, come sfogliare una tavola anatomica. |
+| **Scheda clinica** | Per ogni struttura: patologie (MONDO, con codice ICD-11 quando esiste) e segni (HPO), ognuno con il rimando alla fonte e alla relazione che lo lega all'organo. |
+| **Letture** | Capitoli di StatPearls, schede di MedlinePlus e Orphanet collegati alla struttura: **16.573 documenti**, ciascuno con la sua licenza. |
+| **Ricerca nei testi** | Domande in italiano su 140.000 paragrafi, con ricerca semantica locale (nessun servizio esterno). |
+| **Dal sintomo al corpo** | Si descrive un sintomo a parole proprie; ATLAS trova i fenotipi HPO più vicini e illumina le strutture in cui hanno sede. Il testo scritto non viene salvato. |
+| **Letteratura** | Articoli open access da Europe PMC, cercati in tempo reale per nome della struttura. |
+
+## Come è fatto
+
+```
+ fonti pubbliche ──► pipeline Python (01–07) ──► SQLite + sqlite-vec ──► API FastAPI ──► React + three.js
+  (ontologie,         scarica, collega,           atlas.db               sola lettura      scena 3D,
+   modelli 3D,        indicizza; nessun ID        meshes/*.glb                             schede, ricerca
+   testi clinici)     inventato
+```
+
+- **Pipeline** (`pipeline/`): sette passi idempotenti che scaricano le fonti con la
+  loro firma SHA-256, convertono i modelli 3D in GLB compressi, caricano le ontologie,
+  fanno il ponte tra le anatomie (FMA ↔ UBERON), leggono i testi clinici, li collegano
+  alle strutture e calcolano gli embedding in locale.
+- **API** (`api/`): FastAPI in sola lettura sul database prodotto dalla pipeline.
+- **Web** (`web/`): React, React Three Fiber, Zustand, Tailwind.
+- **Ricerca**: `intfloat/multilingual-e5` in locale, `sqlite-vec` per i vettori,
+  fusione per posizione (Reciprocal Rank Fusion) tra titoli e paragrafi.
+
+### Le regole che il progetto non viola
+
+Sono scritte in [SPEC.md](SPEC.md) e controllate dai test:
+
+1. **Ogni affermazione clinica cita la sua fonte.**
+2. **Ogni documento porta la sua licenza**, verificata uno per uno.
+3. **Nessun identificativo è costruito a mano**: un legame esiste solo se una fonte lo
+   dichiara; ciò che non si trova finisce in una tabella di "non mappati" e in un report.
+4. **Nessun dato di pazienti**, mai.
+
+Le scelte tecniche, con il loro perché e i numeri misurati, sono in
+[docs/SCELTE.md](docs/SCELTE.md).
+
+## Fonti e licenze
+
+| Fonte | Cosa fornisce | Licenza |
+|---|---|---|
+| [BodyParts3D](https://lifesciencedb.jp/bp3d/) | Modelli 3D delle strutture | CC BY 4.0 |
+| [FMA](https://sig.biostr.washington.edu/projects/fm/) | Ontologia anatomica di riferimento | CC BY 4.0 |
+| [UBERON](https://obophenotype.github.io/uberon/) | Ponte tra anatomia e clinica | CC BY 3.0 |
+| [HPO](https://hpo.jax.org/) e annotazioni HPOA | Segni e sintomi, sede dei fenotipi | Licenza HPO (uso libero con attribuzione) |
+| [MONDO](https://mondo.monarchinitiative.org/) | Malattie | CC BY 4.0 |
+| [Disease Ontology](https://disease-ontology.org/) | Sede delle malattie | CC0 |
+| [ICD-11](https://icd.who.int/) | Codici delle malattie | CC BY-ND 3.0 IGO |
+| [Wikidata](https://www.wikidata.org/) | Nomi italiani delle strutture | CC0 |
+| [MedlinePlus](https://medlineplus.gov/) | Schede divulgative | Pubblico dominio |
+| [Orphanet](https://www.orpha.net/) | Malattie rare | CC BY 4.0 |
+| [StatPearls](https://www.ncbi.nlm.nih.gov/books/NBK430685/) | Capitoli clinici e di anatomia | CC BY-NC-ND 4.0 (per capitolo) |
+| [Europe PMC](https://europepmc.org/) | Letteratura, in tempo reale | Quella del singolo articolo |
+
+Nessun dato di terzi è incluso in questo repository: la pipeline li scarica dalle
+fonti ufficiali e li tiene in `data/`, che non viene versionata.
+
+## Provarlo
+
+Servono **Python 3.11+**, **Node 20+** e qualche GB libero per le fonti scaricate. Una GPU NVIDIA non è
+necessaria, ma riduce il calcolo degli embedding da ore a minuti.
 
 ```bash
 python -m venv .venv
-.venv/Scripts/pip install -e ".[dev,embed]"   # POSIX: .venv/bin/pip
-# Con una GPU NVIDIA, PRIMA di questa riga installare torch con CUDA
-# (https://pytorch.org/get-started/locally/): gli embedding di 07 vanno in minuti.
+.venv/bin/pip install -e ".[dev,embed]"        # Windows: .venv\Scripts\pip
 npm install
 npm --prefix web install
 ```
 
-## Pipeline → `data/atlas.db` + `data/meshes/*.glb`
+Per usare la GPU, installare PyTorch con CUDA **prima** della riga `pip install`
+(<https://pytorch.org/get-started/locally/>; le schede RTX 50 richiedono CUDA 12.8+).
+
+Poi si costruisce il database (una volta sola, poi ogni passo salta ciò che ha già
+fatto) e si avvia l'applicazione:
 
 ```bash
-npm run pipeline             # tutti i passi, in ordine
+npm run pipeline
 ```
-
-| Passo | Script | Cosa fa |
-|---|---|---|
-| `npm run pipeline:fetch` | `pipeline/01_fetch_sources.py` | Scarica le fonti in `data/raw/` e registra URL, data e SHA-256 in `MANIFEST.json` |
-| `npm run pipeline:meshes` | `pipeline/02_build_meshes.py` | OBJ → GLB Draco della regione attiva, centroidi e raggi (`data/build/geometry.json`) |
-| `npm run pipeline:ontologies` | `pipeline/03_load_ontologies.py` | FMA, HPO, HPOA, MONDO, Disease Ontology, ICD-11, nomi italiani Wikidata → tabelle |
-| `npm run pipeline:bridge` | `pipeline/04_bridge_fma_uberon.py` | Crosswalk FMA ↔ UBERON, tabella `unmapped`, report in `data/reports/` |
-| `npm run pipeline:documents` | `pipeline/05_ingest_documents.py` | MedlinePlus, Orphanet, StatPearls → `document`, con licenza per documento |
-| `npm run pipeline:links` | `pipeline/06_link_documents.py` | Documento → malattia (MONDO) e → struttura (FMA), report `documents.md` |
-| `npm run pipeline:embed` | `pipeline/07_embed.py` | Chunk ed embedding locali in `sqlite-vec` (`chunk_vec`) |
-
-Ogni script è idempotente. Nessun ID viene costruito: ciò che non si trova nei file
-scaricati finisce in `unmapped` (invariante I5). **Dopo ogni esecuzione vanno letti
-`data/reports/coverage.md`, `data/reports/unmapped_<regione>.md`,
-`data/reports/is_a_links.md` e `data/reports/documents.md`.**
-
-### Scelte di Fase 1 da conoscere
-
-- **Regioni: una tabella, non codice.** `REGIONS` in `pipeline/lib/config.py` elenca
-  le regioni in ordine di priorità. Testa, collo, arti e torace sono definiti dai loro
-  concetti BodyParts3D; l'addome da un volume (box di *abdomen* `FMA:9577`, che include
-  la pelvi, sotto il diaframma `FMA:13295`). Ciò che nessuna regola reclama (vasi,
-  nervi) segue l'elemento reclamato più vicino. Ogni regione produce un GLB; aggiungerne
-  una non richiede modifiche all'applicazione.
-- **Un nodo sta in un solo GLB.** Un concetto i cui elementi cadono in due regioni va
-  nella regione della maggioranza: ogni FMA ID compare in un solo file.
-- **Ereditarietà destra/sinistra.** Le fonti cliniche parlano di "omero", non di
-  "omero destro". Una struttura con lato eredita i legami UBERON della versione senza
-  lato solo se la fonte dichiara la sottoclasse (FMA `subClassOf`, UBERON `is_a`) e i
-  nomi coincidono a meno del lato (`pipeline/lib/laterality.py`). I legami stanno in
-  `structure_uberon` con la loro provenienza; `structure.uberon_id` resta il solo xref
-  esatto. La scheda lo dichiara e cita la relazione. Effetto sulle strutture con almeno
-  una patologia o un segno: arti superiori 2 → 63, arti inferiori 3 → 57, testa
-  43 → 123, torace 35 → 57, addome 52 → 66.
-- **Ereditarietà dalla classe più generale.** Se, anche con il lato, una struttura
-  non raggiunge patologie o segni, eredita quelli dell'antenato FMA più vicino
-  (catena di `subClassOf` dichiarati) il cui termine UBERON ne porta: *Right fourth
-  rib* ⊑ *Fourth rib* ⊑ *Rib* (`pipeline/lib/taxonomy.py`, basis `fma_is_a`). Al più
-  `ISA_MAX_HOPS` passi e antenati con al più `ISA_MAX_DESCENDANTS` sottoclassi, per non
-  arrivare a "Organ". La scheda dice che le voci valgono per la classe generale e cita
-  FMA. Limiti da tarare leggendo `data/reports/is_a_links.md`.
-- **Fenotipi bilaterali.** Un fenotipo che HPO dichiara bilaterale (nome con la parola
-  "bilateral", o modificatore "Bilateral" nella definizione logica) non compare sulle
-  strutture con un solo lato: "Right kidney" eredita da "kidney", ma non la "Bilateral
-  renal agenesis". `phenotype.bilateral` e `structure.sided` li marca 03; il filtro è in
-  `api/queries.py`.
-- **Nomi italiani.** Da FMA quando li ha; altrimenti dall'etichetta italiana della voce
-  Wikidata con lo stesso FMA ID (P1402, dati CC0), solo se il legame è uno a uno
-  (`pipeline/lib/wikidata.py`). `structure.label_it_source` dice da dove viene; la
-  scheda cita la voce Wikidata.
-- **Fonte della sede.** `disease_structure.source` dice chi asserisce che una malattia
-  ha sede in una struttura (MONDO o Disease Ontology); la scheda cita quella fonte.
-- **Apparato (`system`).** Dall'albero di BodyParts3D quando lo dichiara; altrimenti
-  risalendo il `part_of` di FMA (es. cuore, cervelletto, che BodyParts3D colloca sotto
-  "torace" e "testa").
-- **Un nodo GLB per elemento, sotto il concetto più specifico.** Gli insiemi di
-  elementi dei concetti si sovrappongono (un segmento epatico è anche "fegato"):
-  ogni elemento compare una volta, sotto il concetto più specifico che lo contiene.
-  Il fegato non ha quindi un nodo proprio: si accende tramite le sue parti
-  (`mesh_nodes` in `GET /structure/{fma_id}`).
-- **`parent_fma_id` viene dall'albero PART-OF di BodyParts3D**, che è derivato da FMA
-  ed è un albero vero (un solo genitore). Dove FMA 5.1 non asserisce quella relazione
-  come parte diretta, la riga è in `unmapped` (`parent_not_direct_fma_part`).
-- **Nomi latini e italiani** vengono dagli equivalenti di FMA con lingua dichiarata.
-  L'italiano è quasi assente nella fonte: l'interfaccia mostra il nome inglese
-  quando manca, non una traduzione fatta a mano.
-- **Estensioni allo schema di SPEC §6:** tabelle `source_release` (versione e licenza
-  di ogni fonte) e `structure_uberon` (legami con provenienza), colonne
-  `disease_structure.source/source_id`, indici sulle tabelle di relazione.
-
-### Scelte di Fase 3 da conoscere
-
-- **Licenze, documento per documento (I3).** MedlinePlus: i riassunti dei temi sono
-  pubblico dominio (https://medlineplus.gov/about/using/usingcontent/). Orphanet: la
-  CC BY 4.0 è dichiarata nel file Orphadata. StatPearls: ogni capitolo dichiara la sua
-  licenza nel file; al 13/11/2026 8.660 capitoli su 8.661 sono CC BY-NC-ND 4.0 (uno CC
-  BY 4.0). È la risposta alla domanda aperta della SPEC §13: si possono ridistribuire,
-  **senza modifiche e non a fini commerciali**. I chunk sono estratti testuali non
-  modificati; la scheda rimanda sempre al capitolo originale.
-- **StatPearls solo dall'FTP ufficiale NCBI** (SPEC §3): un unico archivio da ~2 GB,
-  letto in streaming senza estrarlo. I capitoli "(Archived)" e le versioni
-  "nurse-article" si saltano; i rimandi bibliografici `[1]` si tolgono dal testo (nella
-  Fase 4 i marcatori `[n]` sono quelli delle citazioni dell'assistente).
-- **Legami solo da riferimenti dichiarati (I5)** (`pipeline/lib/doclinks.py`): codici
-  MeSH e ORPHAcode tramite le equivalenze esatte di MONDO, MONDO citato da Orphanet,
-  MeSH anatomici tramite UBERON, titolo dei capitoli di anatomia ("Anatomy, Abdomen and
-  Pelvis, Liver") per nome esatto, titolo dei capitoli su una malattia per nome o
-  sinonimo EXACT di MONDO. Dalla malattia si arriva alla sua sede, anche risalendo
-  `part_of` di UBERON di al più due passi ma mai fino a un apparato intero. Ogni legame
-  registra `basis` e `via`; la scheda li mostra.
-- **Embedding.** `intfloat/multilingual-e5-base` (MIT) in locale, con i prefissi
-  `query:`/`passage:` di E5; `sqlite-vec` con distanza coseno. Senza GPU l'indice
-  completo (~140.000 chunk) richiede ore: `--first-chunks 1` fa una prova rapida
-  sull'apertura di ogni documento. L'API codifica la domanda con lo stesso modello
-  registrato in `embedding_meta`.
-
-### Scelte delle Fasi 5 e 6 da conoscere
-
-- **Dal sintomo al corpo** (`POST /locate`). La sede di un fenotipo è quella della sua
-  definizione logica HPO o, se manca, quella dell'antenato is_a più vicino che la
-  dichiara (semantica della sottoclasse: "Back pain" è un'"Abnormality of the
-  vertebral column"). Una sede non in scena sale al "tutto" più vicino (part_of), mai a
-  una struttura larga. Ogni fenotipo cita HPO, e l'antenato quando la sede è
-  ereditata. Il testo scritto non viene salvato. Un vettore per nome e sinonimo di
-  fenotipo, con un modello proprio (`LOCATE_MODEL`, e5-large): 19/20 sulle frasi di
-  prova contro 15/20 di e5-base.
-- **Letteratura** (`GET /structure/{id}/literature`): Europe PMC in tempo reale, solo
-  open access, ricerca per nome della struttura (senza lato) in titoli e abstract.
-  Mai ingerita né salvata; ogni articolo porta la licenza che Europe PMC dichiara.
-- **L'assistente (Fase 4) non c'è**: rinviato per decisione dell'utente.
-
-## Sviluppo
 
 ```bash
-npm run dev                  # API su :8000 + web su :5173  (equivale a `make dev`)
-npm run gen:types            # rigenera web/src/types/atlas.d.ts dall'OpenAPI (API accesa)
+npm run dev
 ```
 
-L'API parte senza riavvio automatico: su Windows il reloader di uvicorn manda un Ctrl+C
-a tutta la console e spegne anche il server web. Chi modifica `api/` può usare
-`npm run dev:api:reload` in un terminale a parte.
+L'atlante è su <http://localhost:5173>, l'API su <http://localhost:8000/docs>.
 
-Variabili opzionali: `ATLAS_API_KEY` (API) + `VITE_ATLAS_API_KEY` (web),
-`ATLAS_CORS_ORIGINS`, `ATLAS_DB`, `ATLAS_MESHES`.
+| Passo | Cosa fa |
+|---|---|
+| `pipeline:fetch` | Scarica le fonti in `data/raw/` con URL, data e SHA-256 in `MANIFEST.json` |
+| `pipeline:meshes` | Modelli OBJ → GLB compressi (Draco), uno per regione |
+| `pipeline:ontologies` | FMA, HPO, MONDO, Disease Ontology, ICD-11, Wikidata → tabelle |
+| `pipeline:bridge` | Ponte FMA ↔ UBERON, ereditarietà destra/sinistra, report di copertura |
+| `pipeline:documents` | MedlinePlus, Orphanet, StatPearls, con licenza per documento |
+| `pipeline:links` | Documento → malattia → struttura, solo da riferimenti dichiarati |
+| `pipeline:embed` | Paragrafi, titoli e fenotipi → vettori in `sqlite-vec` |
 
-### Interfaccia
-
-Il linguaggio visivo è quello della tavola anatomica: scena sul verde dei teli
-chirurgici, scheda chiara, un solo accento (iodio), linea di richiamo dall'organo
-al suo nome. I token sono in `web/src/index.css`; le tinte dei tessuti e le modalità
-di gruppo (pieno, velato, nascosto) in `web/src/scene/tissues.ts`. I caratteri
-(Brygada 1918, Hanken Grotesk, entrambi SIL OFL) sono serviti in locale: nessuna
-richiesta a terzi.
-
-- **Strati.** Il comando "Strato: Pelle → Muscoli → Ossa → Organi" toglie ciò che sta
-  sopra il livello scelto e vela ciò che sta sotto. Il tessuto di ogni struttura
-  (`structure.tissue`) lo scrive 04 risalendo la tassonomia FMA fino a classi cercate
-  per nome ("Muscle organ", "Bone organ", "Skin"…, `TISSUE_CLASSES` in
-  `pipeline/lib/config.py`); le voci della legenda restano regolabili una per una.
-- **Contorno.** La struttura selezionata ha un contorno color iodio (drei `Outlines`).
-- **Misure di Fase 2.** Con `?perf` nell'indirizzo (es. `http://localhost:5173/?perf`)
-  compare un riquadro con il tempo di caricamento, gli fps e il 95° percentile della
-  durata dei frame, confrontati con gli obiettivi della SPEC (< 3 s, 60 fps). Va letto
-  su uno schermo reale ruotando la scena: in un browser senza GPU gli fps non contano.
+Dopo ogni esecuzione i report in `data/reports/` dicono cosa è stato collegato e cosa
+no. Variabili opzionali: `ATLAS_DB`, `ATLAS_MESHES`, `ATLAS_CORS_ORIGINS`,
+`ATLAS_API_KEY` (API) con `VITE_ATLAS_API_KEY` (web). Note per Windows in
+[docs/SCELTE.md](docs/SCELTE.md#note-per-chi-sviluppa-su-windows).
 
 ## Qualità
 
 ```bash
-.venv/Scripts/ruff check api pipeline tests
-.venv/Scripts/mypy api pipeline
-.venv/Scripts/pytest         # include i test sui dati: criteri di accettazione di Fase 1
-npm --prefix web run typecheck
-npm --prefix web run lint
-npm --prefix web test
+.venv/bin/ruff check api pipeline tests && .venv/bin/mypy api pipeline && .venv/bin/pytest
 ```
+
+```bash
+npm --prefix web run typecheck && npm --prefix web run lint && npm --prefix web test
+```
+
+Sui dati reali: **135 test passati**, inclusi i criteri di accettazione di ogni fase,
+misurati su domande scritte prima del codice:
+
+- **Ricerca nei testi:** almeno 18 domande su 20 trovano il documento giusto nei primi 5.
+- **Dal sintomo al corpo:** 19 sintomi su 20, scritti in italiano colloquiale, portano
+  alla struttura attesa.
+
+## Limiti
+
+- **Nessuna validazione clinica.** I contenuti vengono da fonti autorevoli, ma nessun
+  medico ha controllato come sono stati collegati.
+- **Anatomia incompleta.** BodyParts3D non ha la superficie dei polmoni, né milza e
+  tiroide, e ha pochi muscoli scheletrici. Alcune strutture (piccoli vasi, perineo)
+  non hanno documenti dedicati: lì aiuta la voce "Letteratura".
+- **Testi in inglese.** Le fonti cliniche sono in inglese; l'interfaccia, i nomi delle
+  strutture (dove esistono) e le domande sono in italiano.
+- **Nessun assistente conversazionale.** Previsto nella SPEC (Fase 4), non realizzato:
+  ATLAS non usa modelli linguistici generativi.
+
+## Perché esiste
+
+È un progetto personale, nato per vedere fin dove si arriva collegando con rigore
+dati pubblici di anatomia e clinica, senza inventare nulla. Può servire:
+
+- **a chi studia medicina o anatomia**, per passare dalla forma di un organo alla sua
+  patologia e alle letture giuste;
+- **a chi lavora su ontologie biomediche**, come esempio concreto di ponte FMA ↔
+  UBERON ↔ HPO ↔ MONDO, con tutte le lacune documentate;
+- **come base per una collaborazione** (didattica, universitaria o di ricerca), a
+  partire da una validazione clinica dei contenuti.
+
+## Contatti
+
+**Se il progetto ti interessa, per studio, collaborazione o qualunque altra idea,
+scrivimi.** Puoi aprire una [issue](https://github.com/CerryWhy/Atlas/issues) o
+contattarmi dal mio profilo GitHub, [@CerryWhy](https://github.com/CerryWhy).
+
+## Licenza
+
+Il codice è pubblicato per essere letto e studiato; per riusarlo, scrivimi. I dati
+restano soggetti alle licenze delle rispettive fonti, elencate sopra.

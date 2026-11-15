@@ -13,7 +13,6 @@ import json
 import struct
 import subprocess
 import zipfile
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -22,14 +21,6 @@ import trimesh
 MM_TO_M = 0.001
 # Z-up → Y-up: (x, y, z) → (x, z, -y)
 Z_UP_TO_Y_UP = np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, -1, 0, 0], [0, 0, 0, 1]], dtype=np.float64)
-
-
-@dataclass(frozen=True)
-class Geometry:
-    cx: float
-    cy: float
-    cz: float
-    radius: float
 
 
 def load_each(zip_path: Path, element_ids: list[str]) -> dict[str, trimesh.Trimesh]:
@@ -58,13 +49,6 @@ def find_gltf_transform(root: Path) -> list[str]:
         if exe.exists():
             return [str(exe)]
     raise FileNotFoundError("gltf-transform non trovato: eseguire `npm install` nella root")
-
-
-def geometry_of(mesh: trimesh.Trimesh) -> Geometry:
-    lo, hi = mesh.bounds
-    center = (lo + hi) / 2.0
-    radius = float(np.linalg.norm(hi - lo) / 2.0)
-    return Geometry(float(center[0]), float(center[1]), float(center[2]), radius)
 
 
 def export_glb(meshes: dict[str, trimesh.Trimesh], out: Path) -> None:
